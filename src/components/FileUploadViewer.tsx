@@ -1,35 +1,40 @@
-/* eslint-disable */
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import FileDropZone from './FileDropZone';
 import FileInfo from './FileInfo';
 import Table from './Table';
 import * as XLSX from 'xlsx';
-import {Button} from '@/components/ui/button';
-
-type RowData = { [key: string]: string };
-type Data = {
-  headers: string[];
-  rows: RowData[];
-};
+import { Button } from '@/components/ui/button';
 
 interface FileUploadViewerProps {
   className?: string;
-  handleNext?: () => void;  // New prop for stepper control
+  handleNext?: () => void;
+  onFileUpload?: (data: { headers: string[]; rows: { [key: string]: string }[] }, fileName: string) => void;
+  initialData?: { headers: string[]; rows: { [key: string]: string }[] } | null;
+  initialFileName?: string;
 }
 
 const FileUploadViewer: React.FC<FileUploadViewerProps> = ({ 
   className,
-  handleNext 
+  handleNext,
+  onFileUpload,
+  initialData,
+  initialFileName
 }) => {
-  const [data, setData] = useState<Data | null>(null);
-  const [fileName, setFileName] = useState('');
+  const [data, setData] = useState<typeof initialData>(initialData || null);
+  const [fileName, setFileName] = useState(initialFileName || '');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: '', direction: 'asc' });
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (initialData && initialFileName) {
+      setData(initialData);
+      setFileName(initialFileName);
+    }
+  }, [initialData, initialFileName]);
+
   const parseExcel = async (file: File) => {
-    setLoading(true); // Show loading spinner
+    setLoading(true);
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer);
@@ -38,20 +43,23 @@ const FileUploadViewer: React.FC<FileUploadViewerProps> = ({
 
       const headers = (jsonData[0] as string[]).map((header) => header?.trim());
       const rows = (jsonData.slice(1) as Array<(string | undefined)[]>).map((row) => {
-        return headers.reduce((obj: RowData, header: string, index: number) => {
-          obj[header] = row[index] !== undefined && row[index] !== null ? row[index] : '';
+        return headers.reduce((obj: { [key: string]: string }, header: string, index: number) => {
+          obj[header] = row[index] !== undefined && row[index] !== null ? String(row[index]) : '';
           return obj;
-        }, {}); 
+        }, {});
       }).filter((row) => Object.values(row).some((value) => value !== ''));
 
-      setData({ headers, rows });
+      const newData = { headers, rows };
+      setData(newData);
       setFileName(file.name);
-      setUploadedFile(file);  // Store the uploaded file in the state
+      onFileUpload?.(newData, file.name);
+      
+      await uploadFileToBackend(file);
     } catch (error) {
       console.error('Error parsing Excel file:', error);
       alert('Error parsing Excel file. Please make sure it\'s a valid Excel file.');
     } finally {
-      setLoading(false); // Hide loading spinner
+      setLoading(false);
     }
   };
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -141,36 +149,30 @@ const FileUploadViewer: React.FC<FileUploadViewerProps> = ({
   const resetFile = () => {
     setData(null);
     setFileName('');
-    setUploadedFile(null); // Reset the uploaded file when the file is reset
+    onFileUpload?.(null, '');
   };
 
   return (
-    <div className={`bg-white rounded-lg shadow-sm border ${className}`}>
-      <div className="p-6">
+    <div className={`bg-white rounded-lg shadow-sm border ${className}`} style={{ height: '420px' }}>
+
+      <div className="p-8">
         {!data ? (
-          <FileDropZone onFileSelect={handleFile} />
+          <FileDropZone onFileSelect={parseExcel} />
         ) : (
           <div>
             <FileInfo fileName={fileName} onReset={resetFile} />
-            <div className="overflow-hidden border rounded-md relative">
-              {loading && (
-                <div className="absolute inset-0 flex justify-center items-center">
-                  <div className="w-12 h-12 border-4 border-t-4 border-blue-500 rounded-full animate-spin"></div>
-                </div>
-              )}
+            <div className="rounded-md relative">
               <Table headers={data.headers} rows={data.rows} sortConfig={sortConfig} onSort={handleSort} />
             </div>
             {data.rows.length > 100 && (
-              <p className="mt-3 text-sm text-gray-500">
+              <p className="mt-2 text-sm text-gray-500">
                 Showing first 100 rows of {data.rows.length} total rows
               </p>
             )}
-            {/* Next button appears only when data is loaded successfully */}
-            <div className="flex justify-end">
+            <div className="flex justify-end ">
               <Button
                 onClick={handleNext}
-                variant="default"
-                color="primary"
+                variant="ghost"
                 size="lg"
               >
                 NEXT

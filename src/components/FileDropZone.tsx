@@ -40,7 +40,7 @@ const FileDropZone = ({ onFileSelect }: FileDropZoneProps) => {
   return (
     <div
       ref={dropZoneRef}
-      className={`relative h-[60vh] border-2 border-dashed rounded-lg ${
+      className={`relative h-[55vh] border-2 border-dashed rounded-lg ${
         isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
       }`}
       onDragOver={handleDragOver}
@@ -56,9 +56,9 @@ const FileDropZone = ({ onFileSelect }: FileDropZoneProps) => {
       <div className="flex flex-col items-center justify-center h-full gap-4">
         <Upload className={`w-12 h-12 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
         <div className="text-center">
-          <p className="text-sm font-medium text-gray-700">Drag and drop your file here</p>
-          <p className="mt-1 text-xs text-gray-500">or click to browse</p>
-          <p className="mt-2 text-xs text-gray-400">Supports CSV, Excel (.xlsx, .xls)</p>
+          <p className="text-xl font-medium text-gray-700">Drag and drop your file here</p>
+          <p className="mt-1 text-l text-gray-500">or click to browse</p>
+          <p className="mt-2 text-l text-gray-400">Supports CSV, Excel (.xlsx, .xls)</p>
         </div>
       </div>
     </div>
