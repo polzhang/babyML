@@ -1,5 +1,6 @@
 'use client';
-/* eslint-disable */
+/* eslint-disable no-console, no-unused-vars */
+
 import React, { useState, useEffect } from 'react';
 import FileDropZone from './FileDropZone';
 import FileInfo from './FileInfo';
