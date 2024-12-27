@@ -1,159 +1,156 @@
-/* eslint-disable */
 "use client";
 import * as React from 'react';
-import Box from '@mui/material/Box';
-import Stepper from '@mui/material/Stepper';
-import Step from '@mui/material/Step';
-import StepLabel from '@mui/material/StepLabel';
-import Button from '@mui/material/Button';
-import Typography from '@mui/material/Typography';
+import { Box, Stepper, Step, StepLabel, Button, Typography } from '@mui/material';
 import FileUploadViewer from '@/components/FileUploadViewer';
 import Component2 from '@/components/Component2';
 
-// Define your steps as you have
-const steps = ['Upload Training Data', 'Select Training Parameters', 'Predict/Export'];
-interface StepProps {
-  onNext: () => void;  // Add prop for handling next step
-  onBack?: () => void;
-}
+// Types
 interface FileData {
   headers: string[];
-  rows: { [key: string]: string }[];
+  rows: Record<string, string>[];
 }
 
+interface StepComponentProps {
+  onNext: () => void;
+  onBack?: () => void;
+  fileData: FileData | null;
+  setFileData: (data: FileData | null) => void;
+  fileName: string;
+  setFileName: (name: string) => void;
+}
 
+const STEPS = ['Upload Training Data', 'Select Training Parameters', 'Predict/Export'] as const;
 
-// Example custom components for each step
-const Step1Component: React.FC<StepProps> = ({ onNext, fileData, setFileData, setFileName }) => (
-  <div>
+// Step Components
+const Step1Component: React.FC<StepComponentProps> = ({ 
+  onNext, 
+  fileData, 
+  setFileData, 
+  fileName,
+  setFileName 
+}) => (
+  <div className="mt-5">
     <FileUploadViewer
-      className="relative top-[20px] p-4 rounded-lg shadow-lg w"
+      className="relative p-4 rounded-lg shadow-lg"
       handleNext={onNext}
-      initialData={fileData}  // Pass initialData to FileUploadViewer
+      initialData={fileData}
+      initialFileName={fileName}
       onFileUpload={(data, name) => {
-        setFileData(data);  // Update the file data when the file is uploaded
-        setFileName(name);  // Set the file name
+        setFileData(data);
+        setFileName(name);
       }}
     />
   </div>
 );
-const Step2Component: React.FC<StepProps> = ({ onNext, onBack }) => (
+
+const Step2Component: React.FC<StepComponentProps> = ({ onNext, onBack }) => (
   <Component2
     className="p-4 rounded-lg"
     handleNext={onNext}
     handleBack={onBack}
-  />  
+  />
 );
-const Step3Component = () => <div>Step 3 Content</div>;
+
+const Step3Component: React.FC = () => (
+  <div className="mt-5 p-4">
+    <Typography variant="h6">Final Step</Typography>
+  </div>
+);
 
 export default function PageContainer() {
+  // State
   const [activeStep, setActiveStep] = React.useState(0);
   const [skipped, setSkipped] = React.useState(new Set<number>());
-  const [fileData, setFileData] = React.useState<{ headers: string[]; rows: { [key: string]: string }[] } | null>(null);
-  const [fileName, setFileName] = React.useState<string>('');
+  const [fileData, setFileData] = React.useState<FileData | null>(null);
+  const [fileName, setFileName] = React.useState('');
 
-  const isStepOptional = (step: number) => step === 1;
-  const isStepSkipped = (step: number) => skipped.has(step);
-
+  // Handlers
   const handleNext = () => {
-    let newSkipped = skipped;
-    if (isStepSkipped(activeStep)) {
-      newSkipped = new Set(newSkipped.values());
-      newSkipped.delete(activeStep);
-    }
-
-    setActiveStep((prevActiveStep) => prevActiveStep + 1);
-    setSkipped(newSkipped);
+    setActiveStep((prev) => prev + 1);
   };
 
   const handleBack = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep - 1);
-  };
-
-  const handleSkip = () => {
-    if (!isStepOptional(activeStep)) {
-      throw new Error("You can't skip a step that isn't optional.");
-    }
-
-    setActiveStep((prevActiveStep) => prevActiveStep + 1);
-    setSkipped((prevSkipped) => {
-      const newSkipped = new Set(prevSkipped.values());
-      newSkipped.add(activeStep);
-      return newSkipped;
-    });
+    setActiveStep((prev) => prev - 1);
   };
 
   const handleReset = () => {
     setActiveStep(0);
-    setFileData(null);  // Reset the file data when resetting
+    setFileData(null);
     setFileName('');
   };
 
-  // Create an array of the step components you want to render
+  // Step components mapping with consistent props
   const stepComponents = [
     <Step1Component
       key="step1"
-      onNext={() => setActiveStep((prevStep) => prevStep + 1)}
-      fileData={fileData}  // Pass fileData to Step1Component
-      setFileData={setFileData}  // Pass setter to Step1Component
-      setFileName={setFileName}  // Pass setter to set the file name
+      onNext={handleNext}
+      fileData={fileData}
+      setFileData={setFileData}
+      fileName={fileName}
+      setFileName={setFileName}
     />,
     <Step2Component
       key="step2"
-      onNext={() => setActiveStep((prevStep) => prevStep + 1)}
+      onNext={handleNext}
       onBack={handleBack}
+      fileData={fileData}
+      setFileData={setFileData}
+      fileName={fileName}
+      setFileName={setFileName}
     />,
-    <Step3Component />,
+    <Step3Component key="step3" />,
   ];
 
+  // Log state changes for debugging
+  React.useEffect(() => {
+    console.log('File Data:', fileData);
+    console.log('File Name:', fileName);
+    console.log('Active Step:', activeStep);
+  }, [fileData, fileName, activeStep]);
+
   return (
-    <div>
-      <img
-        src="/logo.png"
-        alt="Logo"
-        className="left-3 relative w-48 h-auto"
-      />
-      <div className="mt-6 ml-12 flex items-center justify-center w-[90vw]">
-        <Box sx={{ width: '100%' }}>
+    <div className="min-h-screen bg-white">
+      <div className="px-4 py">
+        <img
+          src="/logo.png"
+          alt="Logo"
+          className="w-48 h-auto mb-8"
+        />
+        
+        <Box className="max-w-7xl mx-auto">
           <Stepper activeStep={activeStep}>
-            {steps.map((label, index) => {
-              const stepProps: { completed?: boolean } = {};
-              const labelProps: {
-                optional?: React.ReactNode;
-              } = {};
-              if (isStepOptional(index)) {
-                labelProps.optional = (
-                  <Typography variant="caption"></Typography>
-                );
-              }
-              if (isStepSkipped(index)) {
-                stepProps.completed = false;
-              }
-              return (
-                <Step key={label} {...stepProps}>
-                  <StepLabel {...labelProps} sx={{ '& .MuiStepLabel-label': { fontSize: '18px' } }}>
-                    {label}
-                  </StepLabel>
-                </Step>
-              );
-            })}
+            {STEPS.map((label, index) => (
+              <Step key={label}>
+                <StepLabel 
+                  sx={{ '& .MuiStepLabel-label': { fontSize: '18px' } }}
+                >
+                  {label}
+                </StepLabel>
+              </Step>
+            ))}
           </Stepper>
 
-          {activeStep === steps.length ? (
-            <React.Fragment>
-              <Typography sx={{ mt: 2, mb: 1 }}>
-                All steps completed - you're finished
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'row', pt: 2 }}>
-                <Box sx={{ flex: '1 1 auto' }} />
-                <Button onClick={handleReset}>Reset</Button>
-              </Box>
-            </React.Fragment>
-          ) : (
-            <React.Fragment>
-              {stepComponents[activeStep]}
-            </React.Fragment>
-          )}
+          <div className="mt-8">
+            {activeStep === STEPS.length ? (
+              <div>
+                <Typography sx={{ mt: 2, mb: 1 }}>
+                  All steps completed successfully
+                </Typography>
+                <Box sx={{ display: 'flex', pt: 2 }}>
+                  <Box sx={{ flex: '1 1 auto' }} />
+                  <Button
+                    variant="contained"
+                    onClick={handleReset}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    Reset
+                  </Button>
+                </Box>
+              </div>
+            ) : (
+              <div>{stepComponents[activeStep]}</div>
+            )}
+          </div>
         </Box>
       </div>
     </div>
