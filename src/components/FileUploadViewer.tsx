@@ -26,7 +26,7 @@ const FileUploadViewer: React.FC<FileUploadViewerProps> = ({
   const [data, setData] = useState<typeof initialData>(null);
   const [fileName, setFileName] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: '', direction: 'asc' });
-  const [setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // Update local state when props change
   useEffect(() => {
