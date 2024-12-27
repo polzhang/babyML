@@ -60,7 +60,6 @@ const Step3Component: React.FC = () => (
 export default function PageContainer() {
   // State
   const [activeStep, setActiveStep] = React.useState(0);
-  const [skipped, setSkipped] = React.useState(new Set<number>());
   const [fileData, setFileData] = React.useState<FileData | null>(null);
   const [fileName, setFileName] = React.useState('');
 
@@ -119,7 +118,7 @@ export default function PageContainer() {
         
         <Box className="max-w-7xl mx-auto">
           <Stepper activeStep={activeStep}>
-            {STEPS.map((label, index) => (
+            {STEPS.map((label) => (
               <Step key={label}>
                 <StepLabel 
                   sx={{ '& .MuiStepLabel-label': { fontSize: '18px' } }}
