@@ -19,7 +19,7 @@ interface StepComponentProps {
   setFileName: (name: string) => void;
 }
 
-const STEPS = ['Upload Training Data', 'Select Training Parameters', 'Predict/Export'] as const;
+const STEPS = ['Upload Training Data', 'Select Training Options', 'Predict/Export'] as const;
 
 // Step Components
 const Step1Component: React.FC<StepComponentProps> = ({ 
