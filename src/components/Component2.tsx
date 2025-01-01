@@ -17,7 +17,7 @@ const Component2 = ({ handleNext, handleBack }) => {
   const [trainTestSplit, setTrainTestSplit] = useState(80); // Default train-test split at 80%
 
   // Data Preprocessing State
-  const [missingDataStrategy, setMissingDataStrategy] = useState('imputation');
+  const [missingDataStrategy, setMissingDataStrategy] = useState('');
   const [imputationMethod, setImputationMethod] = useState('mean');
   const [featureReduction, setFeatureReduction] = useState('none');
   const [constantValue, setConstantValue] = useState('');
@@ -161,7 +161,7 @@ const Component2 = ({ handleNext, handleBack }) => {
                   <SelectContent>
                     <SelectItem value="classification">Classification</SelectItem>
                     <SelectItem value="regression">Regression</SelectItem>
-                    <SelectItem value="clustering">Clustering</SelectItem>
+                    
                   </SelectContent>
                 </Select>
               </div>
