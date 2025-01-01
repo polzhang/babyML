@@ -20,13 +20,13 @@ const Component2 = ({ handleNext, handleBack }) => {
   const [missingDataStrategy, setMissingDataStrategy] = useState('imputation');
   const [imputationMethod, setImputationMethod] = useState('mean');
   const [featureReduction, setFeatureReduction] = useState('none');
-  const [scalingMethod, setScalingMethod] = useState('standardization');
+  const [constantValue, setConstantValue] = useState('');
 
   // Model Selection State
   const [enableEnsemble, setEnableEnsemble] = useState(false);
-  const [validationMethod, setValidationMethod] = useState('train_test'); // Default to train-test
+  const [validationMethod, setValidationMethod] = useState(''); // Default to Auto
   const [kFold, setKFold] = useState('5'); // Default k-fold value
-  const [optimizationMetric, setOptimizationMetric] = useState('accuracy');
+  const [optimizationMetric, setOptimizationMetric] = useState('');
 
   // Columns State for Target Variable Select
   const [columns, setColumns] = useState([]);
@@ -62,26 +62,26 @@ const Component2 = ({ handleNext, handleBack }) => {
           imputation_method: imputationMethod
         },
         feature_reduction: featureReduction,
-        scaling: scalingMethod
       },
       models: {
-        ensemble: enableEnsemble
+        ensemble: enableEnsemble,
+        selected: [] // Add model selection if needed
       },
       validation: {
         method: validationMethod,
-        k_folds: kFold,
+        k_folds: parseInt(kFold),
         metric: optimizationMetric
-      },
-      
+      }
     };
   
-    // Send config to backend
-    axios.post('http://localhost:5000/set-config', config)
+    axios.post('http://localhost:5000/setup-training', config)
       .then(response => {
-        console.log('Configuration submitted successfully:', response.data);
+        console.log('Training results:', response.data);
+        // Handle success - update UI with training results
       })
       .catch(error => {
-        console.error('Error submitting configuration:', error);
+        console.error('Error in training:', error);
+        // Handle error - show error message to user
       });
   };
   
@@ -168,36 +168,66 @@ const Component2 = ({ handleNext, handleBack }) => {
             </TabsContent>
 
             <TabsContent value="preprocessing" className="space-y-4">
-              <div>
-                <Label>Missing Data Strategy</Label>
-                <Select onValueChange={setMissingDataStrategy} value={missingDataStrategy}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select strategy" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="imputation">Imputation</SelectItem>
-                    <SelectItem value="drop_rows">Drop Rows</SelectItem>
-                    <SelectItem value="drop_columns">Drop Columns</SelectItem>
-                    <SelectItem value="ignore">Ignore</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div>
+    <Label>Missing Data Strategy</Label>
+    <Select
+      onValueChange={(value) => {
+        setMissingDataStrategy(value);
+        if (value !== "imputation") {
+          setImputationMethod(""); // Clear imputation method if strategy is not "imputation"
+          setConstantValue(""); // Clear constant value if strategy is not "imputation"
+        }
+      }}
+      value={missingDataStrategy}
+    >
+      <SelectTrigger>
+        <SelectValue placeholder="Select strategy" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="imputation">Imputation</SelectItem>
+        <SelectItem value="drop_rows">Drop Rows</SelectItem>
+      </SelectContent>
+    </Select>
+  </div>
 
-              {missingDataStrategy === 'imputation' && (
-                <div>
-                  <Label>Imputation Method</Label>
-                  <Select onValueChange={setImputationMethod} value={imputationMethod}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select method" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mean">Mean</SelectItem>
-                      <SelectItem value="median">Median</SelectItem>
-                      <SelectItem value="most_frequent">Mode</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+  {missingDataStrategy === "imputation" && (
+    <div>
+      <Label>Imputation Method</Label>
+      <Select
+        onValueChange={(value) => {
+          setImputationMethod(value);
+          if (value !== "constant") {
+            setConstantValue(""); // Clear constant value if not using "constant" method
+          }
+        }}
+        value={imputationMethod}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Select method" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="mean">Mean</SelectItem>
+          <SelectItem value="median">Median</SelectItem>
+          <SelectItem value="most_frequent">Mode</SelectItem>
+          <SelectItem value="constant">Constant</SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  )}
+
+  {missingDataStrategy === "imputation" && imputationMethod === "constant" && (
+    <div>
+      <Label>Constant Value</Label>
+      <Input
+        type="text"
+        placeholder="Enter constant value"
+        value={constantValue}
+        onChange={(e) => setConstantValue(e.target.value)}
+        className="input-class"
+      />
+    </div>
+  )}
+              
 
               <div>
                 <Label>Feature Reduction</Label>
@@ -208,7 +238,7 @@ const Component2 = ({ handleNext, handleBack }) => {
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
                     <SelectItem value="pca">PCA</SelectItem>
-                    <SelectItem value="variance_threshold">Variance Threshold</SelectItem>
+                  
                   </SelectContent>
                 </Select>
               </div>
@@ -221,16 +251,17 @@ const Component2 = ({ handleNext, handleBack }) => {
                 <Label>Validation Method</Label>
                 <Select onValueChange={setValidationMethod} value={validationMethod}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select method" />
+                    <SelectValue placeholder="Select Method" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="kfold">K-Fold Cross Validation</SelectItem>
-                    <SelectItem value="train_test">Train-Test Split</SelectItem>
+                    <SelectItem value="auto">Auto (Default)</SelectItem>
+                    <SelectItem value="cv">N-Fold Cross Validation</SelectItem>
+                    <SelectItem value="holdout">Train-Test Split</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              {validationMethod === 'train_test' && (
+              {validationMethod === 'holdout' && (
                 <div>
                   <Label>Train-Test Split ({trainTestSplit}%)</Label>
                   <Slider
@@ -244,7 +275,7 @@ const Component2 = ({ handleNext, handleBack }) => {
                 </div>
               )}
 
-              {validationMethod === 'kfold' && (
+              {validationMethod === 'cv' && (
                 <div>
                   <Label>Number of Folds</Label>
                   <Input
@@ -259,21 +290,40 @@ const Component2 = ({ handleNext, handleBack }) => {
                 </div>
               )}
 
-              <div>
-                <Label>Optimization Metric</Label>
-                <Select onValueChange={setOptimizationMetric} value={optimizationMetric}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select metric" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="accuracy">Accuracy</SelectItem>
-                    <SelectItem value="f1">F1 Score</SelectItem>
-                    <SelectItem value="roc_auc">ROC AUC</SelectItem>
-                    <SelectItem value="precision">Precision</SelectItem>
-                    <SelectItem value="recall">Recall</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+<div>
+  <Label>Optimization Metric</Label>
+  <Select
+    onValueChange={setOptimizationMetric}
+    value={optimizationMetric}
+  >
+    <SelectTrigger>
+      <SelectValue placeholder="Select metric" />
+    </SelectTrigger>
+    <SelectContent>
+      {problemType === "regression" ? (
+        <>
+          <SelectItem value="r2">R2 (Default)</SelectItem>
+          <SelectItem value="mae">Mean Absolute Error (MAE)</SelectItem>
+          <SelectItem value="rmse">Root Mean Squared Error (RMSE)</SelectItem>
+          <SelectItem value="mse">Mean Squared Error (MSE)</SelectItem>
+        </>
+      ) : problemType === "classification" ? (
+        <>
+          <SelectItem value="f1">F1 Score (Default)</SelectItem>
+          <SelectItem value="log_loss">Log Loss</SelectItem>
+          <SelectItem value="precision">Precision</SelectItem>
+          <SelectItem value="accuracy">Accuracy</SelectItem>
+          <SelectItem value="roc_auc">ROC AUC</SelectItem>
+        </>
+      ) : (
+        <SelectItem value="" disabled>
+          Please select a problem type
+        </SelectItem>
+      )}
+    </SelectContent>
+  </Select>
+</div>
+
 
               <div className="flex items-center space-x-2">
                 <Switch
@@ -288,7 +338,7 @@ const Component2 = ({ handleNext, handleBack }) => {
 
           <div className="flex mt-5 justify-between space-x-2">
             <Button variant="outline" onClick={handleBack}>Back</Button>
-            <Button onClick={handleSubmit}>Next</Button>
+            <Button onClick={handleSubmit}>Finalise and Train</Button>
           </div>
         </CardContent>
       </Card>
