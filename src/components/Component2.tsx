@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -9,8 +10,41 @@ import { Switch } from '@/components/ui/switch';
 import axios from 'axios';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
-const Component2 = ({ handleNext, handleBack }) => {
+interface ConsoleOutputProps {
+  logs: string[];  // Explicitly define the type for logs as string array
+}
+
+const ConsoleOutput: React.FC<ConsoleOutputProps> = ({ logs }) => {
+  const getColor = (text:string) => {
+    if (text.includes('=== Training Complete ===')) return 'text-green-500';
+    if (text.includes('Error')) return 'text-red-500';
+    if (text.includes('===')) return 'text-cyan-500';
+    if (text.includes('Starting')) return 'text-yellow-500';
+    return 'text-gray-200';
+  };
+
+  return (
+    <Card className="bg-gray-900">
+      <CardContent className="p-4">
+        <ScrollArea className="h-[500px]">
+          <div className="font-mono text-sm space-y-1">
+            {logs.map((log, index) => (
+              <div key={index} className={`${getColor(log)} whitespace-pre-wrap`}>
+                {log}
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  );
+};
+
+
+const Component2: React.FC<{ handleNext: () => void; 
+  handleBack: () => void }> = ({ handleNext, handleBack }) => {
   // Basic Setup State
   const [selectedTarget, setSelectedTarget] = useState('');
   const [problemType, setProblemType] = useState('classification');
@@ -31,6 +65,48 @@ const Component2 = ({ handleNext, handleBack }) => {
   // Columns State for Target Variable Select
   const [columns, setColumns] = useState([]);
 
+  const [logs, setLogs] = useState<string[]>([]);
+  const [isTraining, setIsTraining] = useState(false);
+  const [eventSource, setEventSource] = useState<EventSource | null>(null);
+  useEffect(() => {
+    let es: EventSource | null = null;
+    
+    const connectEventSource = () => {
+      if (es) {
+        es.close();
+      }
+
+      es = new EventSource('http://localhost:5000/stream-logs');
+      
+      es.onopen = () => {
+        console.log('EventSource connected');
+      };
+
+      es.onmessage = (event) => {
+        if (event.data !== 'heartbeat') {  // Ignore heartbeat messages
+          setLogs((prevLogs) => [...prevLogs, event.data]);
+        }
+      };
+
+      es.onerror = (error) => {
+        console.log('EventSource error:', error);
+        es?.close();
+        // Try to reconnect after 5 seconds
+        setTimeout(connectEventSource, 5000);
+      };
+
+      setEventSource(es);
+    };
+
+    connectEventSource();
+
+    // Cleanup function
+    return () => {
+      if (es) {
+        es.close();
+      }
+    };
+  }, []);
   useEffect(() => {
     // Fetch column names from the backend (Flask API)
     axios.get('http://localhost:5000/get-columns')
@@ -41,6 +117,8 @@ const Component2 = ({ handleNext, handleBack }) => {
         console.error('Error fetching columns:', error);
       });
   }, []);
+  
+  
 
   // Handle k-fold input change
   const handleInputChange = (e) => {
@@ -52,6 +130,7 @@ const Component2 = ({ handleNext, handleBack }) => {
 
   // Handle Submit
   const handleSubmit = () => {
+    setIsTraining(true);
     const config = {
       target_variable: selectedTarget,
       problem_type: problemType,
@@ -77,6 +156,14 @@ const Component2 = ({ handleNext, handleBack }) => {
     axios.post('http://localhost:5000/setup-training', config)
       .then(response => {
         console.log('Training results:', response.data);
+        const fullLogs = response.data.logs || [];
+          setLogs(prev => [...prev, ...fullLogs,
+            '=== Training Complete ===',
+            `Best Model: ${response.data.best_estimator}`,
+            `Best Score: ${response.data.best_score}`,
+            'Best Configuration:',
+            JSON.stringify(response.data.best_config, null, 2)
+        ]);
         // Handle success - update UI with training results
       })
       .catch(error => {
@@ -84,9 +171,13 @@ const Component2 = ({ handleNext, handleBack }) => {
         // Handle error - show error message to user
       });
   };
+  if (isTraining) {
+    return <ConsoleOutput logs={logs} />;
+  }
   
 
   return (
+    
     <div className="grid place-items-center">
       <Card className="w-full max-w-6xl">
         <CardHeader>
