@@ -3,6 +3,7 @@ import * as React from 'react';
 import { Box, Stepper, Step, StepLabel, Button, Typography } from '@mui/material';
 import FileUploadViewer from '@/components/FileUploadViewer';
 import Component2 from '@/components/Component2';
+import exportpredict from '@/components/exportpredict';
 
 // Types
 interface FileData {
@@ -52,9 +53,7 @@ const Step2Component: React.FC<StepComponentProps> = ({ onNext, onBack }) => (
 );
 
 const Step3Component: React.FC = () => (
-  <div className="mt-5 p-4">
-    <Typography variant="h6">Final Step</Typography>
-  </div>
+  <h>text</h>
 );
 
 export default function PageContainer() {

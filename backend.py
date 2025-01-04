@@ -2,6 +2,7 @@ import io
 import pandas as pd
 import numpy as np
 import time
+import logging
 import subprocess
 from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
@@ -13,6 +14,7 @@ from sklearn.decomposition import PCA
 import colorama
 from colorama import Fore, Style
 import threading
+from flaml.automl.logger import logger as flaml_logger
 
 
 colorama.init()
@@ -27,31 +29,37 @@ CORS(app, resources={
     }
 })
 
+log_output = []
+class ListHandler(logging.Handler):
+    def __init__(self, log_list):
+        super().__init__()
+        self.log_list = log_list
+
+    def emit(self, record):
+        self.log_list.append(self.format(record))
+
+
+log_handler = ListHandler(log_output)
+flaml_logger.addHandler(log_handler)
+flaml_logger.setLevel(logging.INFO)
 uploaded_file_data = None
 automl_instance = None
-log_output = []
 
 def stream_terminal_output():
     """Capture terminal output in real-time from a subprocess."""
     process = subprocess.Popen(
-        ['python', 'backend.py'],  # Replace with the command/script whose output you want to capture
+        ['python', 'backend.py'],  # Replace with the command/script to run
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        bufsize=1,
         universal_newlines=True
     )
     
-    # Read and stream stdout and stderr from the subprocess
-    while True:
-        output = process.stdout.readline()
-        if output:
-            log_output.append(output.strip())  # Capture the output
-        error_output = process.stderr.readline()
-        if error_output:
-            log_output.append(error_output.strip())  # Capture any error output
-        if process.poll() is not None:
-            break
-        time.sleep(0.1)
+    # Block until the process is complete and capture output
+    stdout, stderr = process.communicate()
+    log_output.append(stdout.strip())
+    log_output.append(stderr.strip())
+    
+    
 
 def generate_log_stream():
     """Generator function to stream logs to the frontend."""
@@ -297,7 +305,7 @@ def setup_training():
         # FLAML setup
         automl_instance = AutoML()
         settings = {
-            'time_budget': 20,  # seconds
+            'time_budget': 10,  # seconds
             'metric': validation_settings.get('metric', 'accuracy' if problem_type == 'classification' else 'r2'),
             'task': problem_type,
             'n_jobs': -1,
@@ -340,11 +348,13 @@ def setup_training():
         return jsonify({"error": f"Error in training setup: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    print("Starting terminal output stream...")
     
     # Start the terminal output capturing in a separate thread
     log_thread = threading.Thread(target=stream_terminal_output)
     log_thread.daemon = True  # Daemonize the thread so it ends with the main program
     log_thread.start()
 
-    app.run(debug=True)
+    app.run(debug=False)
+
+    
+    

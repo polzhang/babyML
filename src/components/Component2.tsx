@@ -17,24 +17,31 @@ interface ConsoleOutputProps {
 }
 
 const ConsoleOutput: React.FC<ConsoleOutputProps> = ({ logs }) => {
+  const bottomRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
+
   const getColor = (text:string) => {
     if (text.includes('=== Training Complete ===')) return 'text-green-500';
     if (text.includes('Error')) return 'text-red-500';
     if (text.includes('===')) return 'text-cyan-500';
     if (text.includes('Starting')) return 'text-yellow-500';
-    return 'text-gray-200';
+    return 'text-black-200';
   };
 
   return (
-    <Card className="bg-gray-900">
+    <Card className="bg-gray-100">
       <CardContent className="p-4">
-        <ScrollArea className="h-[500px]">
-          <div className="font-mono text-sm space-y-1">
+        <ScrollArea className="h-[400px]">
+          <div className="ml-5 font-mono text-sm space-y-1">
             {logs.map((log, index) => (
               <div key={index} className={`${getColor(log)} whitespace-pre-wrap`}>
                 {log}
               </div>
             ))}
+            <div ref={bottomRef} /> {/* Invisible element at the bottom */}
           </div>
         </ScrollArea>
       </CardContent>
@@ -68,45 +75,25 @@ const Component2: React.FC<{ handleNext: () => void;
   const [logs, setLogs] = useState<string[]>([]);
   const [isTraining, setIsTraining] = useState(false);
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
+
   useEffect(() => {
-    let es: EventSource | null = null;
+    const eventSource = new EventSource('http://localhost:5000/stream-logs');
     
-    const connectEventSource = () => {
-      if (es) {
-        es.close();
+    eventSource.onmessage = (event) => {
+      if (event.data !== 'heartbeat') {
+        setLogs(prevLogs => [...prevLogs, event.data]); // Update logs state with new messages
       }
-
-      es = new EventSource('http://localhost:5000/stream-logs');
-      
-      es.onopen = () => {
-        console.log('EventSource connected');
-      };
-
-      es.onmessage = (event) => {
-        if (event.data !== 'heartbeat') {  // Ignore heartbeat messages
-          setLogs((prevLogs) => [...prevLogs, event.data]);
-        }
-      };
-
-      es.onerror = (error) => {
-        console.log('EventSource error:', error);
-        es?.close();
-        // Try to reconnect after 5 seconds
-        setTimeout(connectEventSource, 5000);
-      };
-
-      setEventSource(es);
     };
-
-    connectEventSource();
-
-    // Cleanup function
+  
+    setEventSource(eventSource); // Save eventSource reference
+  
     return () => {
-      if (es) {
-        es.close();
+      if (eventSource) {
+        eventSource.close();
       }
     };
   }, []);
+
   useEffect(() => {
     // Fetch column names from the backend (Flask API)
     axios.get('http://localhost:5000/get-columns')
@@ -131,6 +118,7 @@ const Component2: React.FC<{ handleNext: () => void;
   // Handle Submit
   const handleSubmit = () => {
     setIsTraining(true);
+    setLogs([]);
     const config = {
       target_variable: selectedTarget,
       problem_type: problemType,
@@ -172,7 +160,20 @@ const Component2: React.FC<{ handleNext: () => void;
       });
   };
   if (isTraining) {
-    return <ConsoleOutput logs={logs} />;
+    return (
+      <div>
+        <ConsoleOutput logs={logs} />
+        <div className="mt-4 flex justify-between">
+          <Button variant="outline" onClick={handleBack}>Back</Button>
+          <Button
+            onClick={handleNext}
+            
+          >
+            Next
+          </Button>
+        </div>
+      </div>
+    );
   }
   
 
