@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import time
 import logging
-import subprocess
+import traceback
 from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 from flaml import AutoML
@@ -12,10 +12,33 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder, On
 from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
 import colorama
+import queue
 from colorama import Fore, Style
-import threading
 from flaml.automl.logger import logger as flaml_logger
 
+
+log_queue = queue.Queue()
+
+class QueueHandler(logging.Handler):
+    def __init__(self, log_queue):
+        super().__init__()
+        self.log_queue = log_queue
+
+    def emit(self, record):
+        self.log_queue.put(self.format(record))
+
+# Clear any existing handlers
+flaml_logger.handlers.clear()
+
+# Add queue handler
+queue_handler = QueueHandler(log_queue)
+flaml_logger.addHandler(queue_handler)
+flaml_logger.setLevel(logging.INFO)
+
+# Add console handler for immediate console output
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+flaml_logger.addHandler(console_handler)
 
 colorama.init()
 app = Flask(__name__)
@@ -29,62 +52,23 @@ CORS(app, resources={
     }
 })
 
-log_output = []
-class ListHandler(logging.Handler):
-    def __init__(self, log_list):
-        super().__init__()
-        self.log_list = log_list
 
-    def emit(self, record):
-        self.log_list.append(self.format(record))
-
-
-log_handler = ListHandler(log_output)
-flaml_logger.addHandler(log_handler)
-flaml_logger.setLevel(logging.INFO)
 uploaded_file_data = None
 automl_instance = None
 
-def stream_terminal_output():
-    """Capture terminal output in real-time from a subprocess."""
-    process = subprocess.Popen(
-        ['python', 'backend.py'],  # Replace with the command/script to run
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True
-    )
-    
-    # Block until the process is complete and capture output
-    stdout, stderr = process.communicate()
-    log_output.append(stdout.strip())
-    log_output.append(stderr.strip())
-    
-    
-
-def generate_log_stream():
-    """Generator function to stream logs to the frontend."""
-    global log_output
-    while True:
-        if log_output:
-            log_entry = log_output.pop(0)  # Take the first log entry
-            yield f"data: {log_entry}\n\n"
-        time.sleep(1)
 
 @app.route('/stream-logs')
 def stream_logs_endpoint():
     def generate():
-        try:
-            while True:
-                # Check if there are any logs to send
-                if log_output:
-                    log_entry = log_output.pop(0)
-                    yield f"data: {log_entry}\n\n"
-                else:
-                    # Send a heartbeat every 15 seconds to keep connection alive
-                    yield f"data: heartbeat\n\n"
-                time.sleep(1)
-        except GeneratorExit:
-            print("Client disconnected from event stream")
+        while True:
+            try:
+                # Non-blocking queue get with timeout
+                log_entry = log_queue.get_nowait()
+                yield f"data: {log_entry}\n\n"
+            except queue.Empty:
+                # Send heartbeat if no logs
+                yield f"data: heartbeat\n\n"
+                time.sleep(0.1)  # Reduced sleep time for more responsive logging
     
     response = Response(
         stream_with_context(generate()),
@@ -93,6 +77,7 @@ def stream_logs_endpoint():
     response.headers['Cache-Control'] = 'no-cache'
     response.headers['X-Accel-Buffering'] = 'no'
     return response
+
 
 @app.route('/start-training', methods=['POST'])
 def start_training():
@@ -225,6 +210,19 @@ def setup_training():
     global uploaded_file_data, automl_instance
     print(f"\n{Fore.GREEN}=== Received Training Setup Request ==={Style.RESET_ALL}")
     
+    # Clear the log queue before starting new training
+    while not log_queue.empty():
+        try:
+            log_queue.get_nowait()
+        except queue.Empty:
+            break
+    
+    # Clear previous automl instance
+    if automl_instance is not None:
+        del automl_instance
+        automl_instance = None
+
+
     if uploaded_file_data is None:
         return jsonify({"error": "No data uploaded"}), 400
 
@@ -305,7 +303,7 @@ def setup_training():
         # FLAML setup
         automl_instance = AutoML()
         settings = {
-            'time_budget': 10,  # seconds
+            'time_budget': config.get('time_budget') ,  # seconds
             'metric': validation_settings.get('metric', 'accuracy' if problem_type == 'classification' else 'r2'),
             'task': problem_type,
             'n_jobs': -1,
@@ -328,32 +326,170 @@ def setup_training():
         )
 
         best_model = automl_instance.model.estimator
+        best_model = automl_instance.model.estimator
+        
+        # Calculate additional metrics based on problem type
+        if problem_type == 'classification':
+            from sklearn.metrics import (
+                classification_report, confusion_matrix, 
+                roc_auc_score, precision_recall_fscore_support
+            )
+            
+            y_pred = automl_instance.predict(X_test)
+            y_pred_proba = automl_instance.predict_proba(X_test)
+            
+            # Get classification metrics
+            class_report = classification_report(y_test, y_pred, output_dict=True)
+            conf_matrix = confusion_matrix(y_test, y_pred).tolist()
+            
+            # Calculate ROC AUC (handle binary/multiclass)
+            try:
+                if len(np.unique(y)) == 2:
+                    roc_auc = roc_auc_score(y_test, y_pred_proba[:, 1])
+                else:
+                    roc_auc = roc_auc_score(y_test, y_pred_proba, multi_class='ovr')
+            except:
+                roc_auc = None
+            
+            metrics = {
+                "classification_report": class_report,
+                "confusion_matrix": conf_matrix,
+                "roc_auc_score": roc_auc,
+                "training_time": automl_instance.time_to_find_best_model,
+                "models_trained": len(automl_instance.estimator_list),
+                "best_iteration": automl_instance.best_iteration
+            }
+            
+            print(f"\n{Fore.CYAN}=== Detailed Metrics ==={Style.RESET_ALL}")
+            print(f"ROC AUC Score: {roc_auc:.4f}" if roc_auc else "ROC AUC: N/A")
+            print(f"Accuracy: {class_report['accuracy']:.4f}")
+            print(f"Macro Avg F1: {class_report['macro avg']['f1-score']:.4f}")
+            print(f"Weighted Avg F1: {class_report['weighted avg']['f1-score']:.4f}")
+            
+            log_queue.put(f"\n{Fore.CYAN}=== Detailed Metrics ==={Style.RESET_ALL}")
+            log_queue.put(f"ROC AUC Score: {roc_auc:.4f}" if roc_auc else "ROC AUC: N/A")
+            log_queue.put(f"Accuracy: {class_report['accuracy']:.4f}")
+            log_queue.put(f"Macro Avg F1: {class_report['macro avg']['f1-score']:.4f}")
+            log_queue.put(f"Weighted Avg F1: {class_report['weighted avg']['f1-score']:.4f}")
+
+            
+        else:  # regression
+            from sklearn.metrics import (
+                mean_squared_error, mean_absolute_error, 
+                r2_score, mean_absolute_percentage_error
+            )
+            
+            y_pred = automl_instance.predict(X_test)
+            
+            mse = mean_squared_error(y_test, y_pred)
+            rmse = np.sqrt(mse)
+            mae = mean_absolute_error(y_test, y_pred)
+            r2 = r2_score(y_test, y_pred)
+            
+            try:
+                mape = mean_absolute_percentage_error(y_test, y_pred)
+            except:
+                mape = None
+                
+            metrics = {
+                "rmse": rmse,
+                "mae": mae,
+                "mse": mse,
+                "r2": r2,
+                "mape": mape,
+                "training_time": automl_instance.time_to_find_best_model,
+                "models_trained": len(automl_instance.estimator_list),
+                "best_iteration": automl_instance.best_iteration
+            }
+            
+            print(f"\n{Fore.CYAN}=== Detailed Metrics ==={Style.RESET_ALL}")
+            print(f"RMSE: {rmse:.4f}")
+            print(f"MAE: {mae:.4f}")
+            print(f"R²: {r2:.4f}")
+
+            log_queue.put(f"\n{Fore.CYAN}=== Detailed Metrics ==={Style.RESET_ALL}")
+            log_queue.put(f"RMSE: {rmse:.4f}")
+            log_queue.put(f"MAE: {mae:.4f}")
+            log_queue.put(f"R²: {r2:.4f}")
+
+
+            if mape is not None:
+                print(f"MAPE: {mape:.4f}")
+                log_queue.put(f"MAPE: {mape:.4f}")
+
+        # Get feature importance if available
+        try:
+            feature_importance = automl_instance.feature_importance()
+            if isinstance(feature_importance, pd.Series):
+                feature_importance = feature_importance.to_dict()
+        except:
+            feature_importance = None
+
         print(f"\n{Fore.GREEN}=== Training Complete ==={Style.RESET_ALL}")
         print(f"Best ML learner: {best_model.__class__.__name__}")
         print(f"Best hyperparameter config: {automl_instance.best_config}")
-        print(f"Best score: {automl_instance.best_loss}")
+        print(f"Training time: {automl_instance.time_to_find_best_model:.2f} seconds")
+        print(f"Models trained: {len(automl_instance.estimator_list)}")
 
         response = {
             "status": "success",
             "best_estimator": best_model.__class__.__name__,
             "best_config": automl_instance.best_config,
-            "best_score": automl_instance.best_loss,
-            "feature_importance": automl_instance.feature_importance() if hasattr(automl_instance, 'feature_importance') else None
+            "metrics": metrics,
+            "feature_importance": feature_importance
         }
 
         return jsonify(response), 200
 
     except Exception as e:
-        print(f"{Fore.RED}Error in training setup: {str(e)}{Style.RESET_ALL}")
-        return jsonify({"error": f"Error in training setup: {str(e)}"}), 500
+        error_msg = str(e)
+        print(f"{Fore.RED}Error in training setup: {error_msg}{Style.RESET_ALL}")
+        log_queue.put(f"{Fore.RED}Error in training setup: {error_msg}{Style.RESET_ALL}")
+        return jsonify({
+            "error": error_msg,
+            "status": "error",
+            "traceback": traceback.format_exc()
+        }), 500
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    global automl_instance
+    
+    if automl_instance is None:
+        return jsonify({"error": "No trained model available"}), 400
+        
+    if 'file' not in request.files:
+        return jsonify({"error": "No file part"}), 400
+        
+    file = request.files['file']
+    
+    try:
+        # Read the file
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:
+            df = pd.read_excel(file)
+            
+        # Preprocess the data (using same preprocessing as training)
+        # You'll need to apply the same transformations used during training
+        
+        # Generate predictions
+        predictions = automl_instance.predict(df)
+        
+        # Convert predictions to list for JSON serialization
+        predictions_list = predictions.tolist() if isinstance(predictions, np.ndarray) else predictions
+        
+        return jsonify({
+            "predictions": predictions_list,
+            "num_predictions": len(predictions_list)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     
-    # Start the terminal output capturing in a separate thread
-    log_thread = threading.Thread(target=stream_terminal_output)
-    log_thread.daemon = True  # Daemonize the thread so it ends with the main program
-    log_thread.start()
-
     app.run(debug=False)
 
     

@@ -3,7 +3,7 @@ import * as React from 'react';
 import { Box, Stepper, Step, StepLabel, Button, Typography } from '@mui/material';
 import FileUploadViewer from '@/components/FileUploadViewer';
 import Component2 from '@/components/Component2';
-import exportpredict from '@/components/exportpredict';
+import ExportPredict from '@/components/ExportPredict'; 
 
 // Types
 interface FileData {
@@ -52,8 +52,9 @@ const Step2Component: React.FC<StepComponentProps> = ({ onNext, onBack }) => (
   />
 );
 
-const Step3Component: React.FC = () => (
-  <h>text</h>
+const Step3Component: React.FC<StepComponentProps> = ({ onBack }) => (
+  <ExportPredict
+    onBack={onBack}/>
 );
 
 export default function PageContainer() {
@@ -96,7 +97,15 @@ export default function PageContainer() {
       fileName={fileName}
       setFileName={setFileName}
     />,
-    <Step3Component key="step3" />,
+    <Step3Component 
+      key="step3" 
+      onBack={handleBack}
+      onNext={handleNext}
+      fileData={fileData}
+      setFileData={setFileData}
+      fileName={fileName}
+      setFileName={setFileName}
+     />,
   ];
 
   // Log state changes for debugging

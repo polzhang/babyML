@@ -3,11 +3,11 @@
 import React, { useState, useRef, ChangeEvent, DragEvent } from 'react';
 import { Upload } from 'lucide-react';
 
-interface FileDropZoneProps {
+interface FileDropZone2Props {
   onFileSelect: (file: File) => void;
 }
 
-const FileDropZone = ({ onFileSelect }: FileDropZoneProps) => {
+const FileDropZone = ({ onFileSelect }: FileDropZone2Props) => {
   const [isDragging, setIsDragging] = useState(false);
   const dropZoneRef = useRef<HTMLDivElement | null>(null);
 
@@ -37,9 +37,15 @@ const FileDropZone = ({ onFileSelect }: FileDropZoneProps) => {
     <div className="w-full h-full flex items-center justify-center p-2">
       <div
         ref={dropZoneRef}
-        className={`w-full h-full border-2 border-dashed rounded-lg ${
-          isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
-        }`}
+        className={`
+          w-full 
+          h-full 
+          border-2 
+          border-dashed 
+          rounded-lg 
+          transition-colors
+          ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}
+        `}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}

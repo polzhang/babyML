@@ -56,18 +56,30 @@ const Component2: React.FC<{ handleNext: () => void;
   const [selectedTarget, setSelectedTarget] = useState('');
   const [problemType, setProblemType] = useState('classification');
   const [trainTestSplit, setTrainTestSplit] = useState(80); // Default train-test split at 80%
-
+  const [timeBudget, setTimeBudget] = useState('10'); 
   // Data Preprocessing State
-  const [missingDataStrategy, setMissingDataStrategy] = useState('');
+  const [missingDataStrategy, setMissingDataStrategy] = useState('drop_rows');
   const [imputationMethod, setImputationMethod] = useState('mean');
   const [featureReduction, setFeatureReduction] = useState('none');
   const [constantValue, setConstantValue] = useState('');
 
   // Model Selection State
   const [enableEnsemble, setEnableEnsemble] = useState(false);
-  const [validationMethod, setValidationMethod] = useState(''); // Default to Auto
+  const [validationMethod, setValidationMethod] = useState('auto'); // Default to Auto
   const [kFold, setKFold] = useState('5'); // Default k-fold value
-  const [optimizationMetric, setOptimizationMetric] = useState('');
+  const [optimizationMetric, setOptimizationMetric] = useState('f1'); // Default metric for classification
+
+  const [trainingComplete, setTrainingComplete] = useState(false);
+
+  useEffect(() => {
+    // Dynamically update optimizationMetric when problemType changes
+    setOptimizationMetric(problemType === 'classification' ? 'f1' : 'r2');
+  }, [problemType]);
+
+  const handleProblemTypeChange = (value) => {
+    setProblemType(value); // Updates problem type
+  };
+
 
   // Columns State for Target Variable Select
   const [columns, setColumns] = useState([]);
@@ -123,6 +135,7 @@ const Component2: React.FC<{ handleNext: () => void;
       target_variable: selectedTarget,
       problem_type: problemType,
       train_test_split: trainTestSplit / 100,
+      time_budget: parseInt(timeBudget,10), 
       preprocessing: {
         missing_data: {
           strategy: missingDataStrategy,
@@ -153,10 +166,12 @@ const Component2: React.FC<{ handleNext: () => void;
             JSON.stringify(response.data.best_config, null, 2)
         ]);
         // Handle success - update UI with training results
+        setTrainingComplete(true); // Set training complete
       })
       .catch(error => {
         console.error('Error in training:', error);
         // Handle error - show error message to user
+        setTrainingComplete(false);
       });
   };
   if (isTraining) {
@@ -165,12 +180,11 @@ const Component2: React.FC<{ handleNext: () => void;
         <ConsoleOutput logs={logs} />
         <div className="mt-4 flex justify-between">
           <Button variant="outline" onClick={handleBack}>Back</Button>
-          <Button
-            onClick={handleNext}
-            
-          >
-            Next
-          </Button>
+          {trainingComplete && (
+            <Button onClick={handleNext}>
+              Next
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -182,7 +196,7 @@ const Component2: React.FC<{ handleNext: () => void;
     <div className="grid place-items-center">
       <Card className="w-full max-w-6xl">
         <CardHeader>
-          <CardTitle>AutoML Setup</CardTitle>
+          <CardTitle className='text-2xl'>AutoML Setup</CardTitle>
           <CardDescription>Configure your automated machine learning pipeline</CardDescription>
         </CardHeader>
         <CardContent>
@@ -202,7 +216,7 @@ const Component2: React.FC<{ handleNext: () => void;
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" align="center" className="tooltip-content">
-                        <p>Standardisation & normalisation are automatically applied to features</p>
+                        <p>Standardisation and normalisation are automatically applied to the training data</p>
                       </TooltipContent>
                     </Tooltip>
                   </div>
@@ -229,7 +243,7 @@ const Component2: React.FC<{ handleNext: () => void;
 
             <TabsContent value="basic" className="space-y-4">
               <div>
-                <Label>Target Variable</Label>
+                <Label>Target Variable *</Label>
                 <Select onValueChange={setSelectedTarget} value={selectedTarget}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select target variable" />
@@ -257,6 +271,17 @@ const Component2: React.FC<{ handleNext: () => void;
                   </SelectContent>
                 </Select>
               </div>
+
+              <div>
+            <Label>Time Budget (seconds)</Label>
+            <Input
+              type="number"
+              placeholder="Enter value"
+              value={timeBudget}
+              onChange={(e) => setTimeBudget(e.target.value)}
+              min="10"
+            />
+          </div>
             </TabsContent>
 
             <TabsContent value="preprocessing" className="space-y-4">
@@ -361,7 +386,7 @@ const Component2: React.FC<{ handleNext: () => void;
                     onValueChange={([value]) => setTrainTestSplit(value)}
                     min={50}
                     max={90}
-                    step={5}
+                    step={1}
                     className="w-full"
                   />
                 </div>
