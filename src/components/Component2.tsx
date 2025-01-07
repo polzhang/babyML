@@ -50,8 +50,11 @@ const ConsoleOutput: React.FC<ConsoleOutputProps> = ({ logs }) => {
 };
 
 
-const Component2: React.FC<{ handleNext: () => void; 
-  handleBack: () => void }> = ({ handleNext, handleBack }) => {
+const Component2: React.FC<{ 
+  handleNext: () => void; 
+  handleBack: () => void;
+  refreshTrigger?: number
+}> = ({ handleNext, handleBack, refreshTrigger }) => {
   // Basic Setup State
   const [selectedTarget, setSelectedTarget] = useState('');
   const [problemType, setProblemType] = useState('classification');
@@ -115,7 +118,7 @@ const Component2: React.FC<{ handleNext: () => void;
       .catch(error => {
         console.error('Error fetching columns:', error);
       });
-  }, []);
+  }, [refreshTrigger]);
   
   
 

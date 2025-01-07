@@ -13,6 +13,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
 import colorama
 import queue
+import json
 from colorama import Fore, Style
 from flaml.automl.logger import logger as flaml_logger
 
@@ -53,8 +54,10 @@ CORS(app, resources={
 })
 
 
-uploaded_file_data = None
+uploaded_file_data = None #TRAIN DATA
 automl_instance = None
+
+
 
 
 @app.route('/stream-logs')
@@ -84,19 +87,24 @@ def start_training():
     """Simulated endpoint for starting the training process."""
     # Here you can invoke the terminal command or script that runs your training.
     return jsonify({"message": "Training setup started!"}), 200
+
 @app.route('/get-columns', methods=['GET'])
 def get_columns():
     global uploaded_file_data
+    print("get_columns called, uploaded_file_data is:", "None" if uploaded_file_data is None else "present")
     if uploaded_file_data is None:
         return jsonify({"error": "No data uploaded"}), 400
     columns = list(uploaded_file_data.columns)
+    print("Returning columns:", columns)
     return jsonify({"columns": columns}), 200
 
 @app.route('/set-config', methods=['POST'])
 def set_config():
+    global config
     config = request.json
     print("Received configuration:", config)
     return jsonify({"message": "Configuration received successfully!"}), 200
+
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -207,7 +215,7 @@ def detect_and_encode_categorical(df, max_unique_ratio=0.05):
 
 @app.route('/setup-training', methods=['POST'])
 def setup_training():
-    global uploaded_file_data, automl_instance
+    global uploaded_file_data, automl_instance, config
     print(f"\n{Fore.GREEN}=== Received Training Setup Request ==={Style.RESET_ALL}")
     
     # Clear the log queue before starting new training
@@ -249,9 +257,16 @@ def setup_training():
             if pd.api.types.is_numeric_dtype(y):
                 print(f"\n{Fore.YELLOW}Converting numeric target to categorical for classification{Style.RESET_ALL}")
                 y = y.astype(str)
+            global le 
             le = LabelEncoder()
             y = le.fit_transform(y)
-            print(f"\n{Fore.CYAN}Unique classes in target: {le.classes_}{Style.RESET_ALL}")
+            label_mapping = dict(zip(le.transform(le.classes_), le.classes_))
+    
+                # Print the label mapping
+            print(f"\n{Fore.CYAN}Label Mapping (Numeric to Original Class):{Style.RESET_ALL}")
+            for num, label in label_mapping.items():
+                print(f"{num} -> {label}")
+            
         elif problem_type == 'regression':
             if not pd.api.types.is_numeric_dtype(y):
                 return jsonify({"error": "Target variable must be numeric for regression tasks"}), 400
@@ -451,46 +466,178 @@ def setup_training():
             "traceback": traceback.format_exc()
         }), 500
 
-@app.route('/predict', methods=['POST'])
-def predict():
-    global automl_instance
-    
-    if automl_instance is None:
-        return jsonify({"error": "No trained model available"}), 400
-        
+@app.route('/upload-and-predict', methods=['POST'])
+def upload_and_predict():
+    """Handle both test data upload and prediction."""
+    global test_data, config, automl_instance
+    print("upload_and_predict called")
+    print("uploaded_file_data before:", "None" if uploaded_file_data is None else "present")
+    target_column = config.get('target_variable')
+    if not target_column:
+        print(f"{Fore.RED}Error: 'target_variable' not found in config{Style.RESET_ALL}")
+        return jsonify({"error": "'target_variable' not found in config"}), 400
+
+
+    print(f"\n{Fore.GREEN}=== Received Request for Upload and Prediction ==={Style.RESET_ALL}")
+
     if 'file' not in request.files:
-        return jsonify({"error": "No file part"}), 400
-        
+        print(f"{Fore.RED}Error: No file part in request{Style.RESET_ALL}")
+        return jsonify({"error": "No file part in the request"}), 400
+
     file = request.files['file']
-    
+    if file.filename == '':
+        print(f"{Fore.RED}Error: No selected file{Style.RESET_ALL}")
+        return jsonify({"error": "No selected file"}), 400
+
+    print("uploaded_file_data after:", "None" if uploaded_file_data is None else "present")
     try:
-        # Read the file
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(file)
+        # Save the file content
+        file_content = file.read()
+        file.seek(0)  # Reset file pointer
+        
+        print(f"File name: {file.filename}")
+        print(f"File content length: {len(file_content)} bytes")
+        
+        file_extension = file.filename.split('.')[-1].lower()
+        print(f"File extension: {file_extension}")
+
+        # Upload file
+        if file_extension == 'csv':
+            file_stream = io.StringIO(file_content.decode("utf-8"))
+            test_data = pd.read_csv(file_stream)
+        elif file_extension in ['xls', 'xlsx']:
+            file_stream = io.BytesIO(file_content)
+            test_data = pd.read_excel(file_stream)
         else:
-            df = pd.read_excel(file)
-            
-        # Preprocess the data (using same preprocessing as training)
-        # You'll need to apply the same transformations used during training
+            print(f"{Fore.RED}Error: Unsupported file type: {file_extension}{Style.RESET_ALL}")
+            return jsonify({"error": "Unsupported file type"}), 400
+
+        print(f"\n{Fore.CYAN}=== Uploaded Test DataFrame Info ==={Style.RESET_ALL}")
+        print(f"Shape: {test_data.shape}")
+        print("\nColumns:")
+        for col in test_data.columns:
+            print(f"- {col}")
+
+        # Get config from form data
+        config_str = request.form.get('config', '{}')
+        try:
+            config = json.loads(config_str)
+        except:
+            config = {}
+
+        preprocessing_config = config.get('preprocessing', {})
+        missing_data_config = preprocessing_config.get('missing_data', {})
         
-        # Generate predictions
-        predictions = automl_instance.predict(df)
+        # Check for automl_instance
+        if automl_instance is None:
+            raise ValueError("No trained model available. Please train the model first.")
         
-        # Convert predictions to list for JSON serialization
-        predictions_list = predictions.tolist() if isinstance(predictions, np.ndarray) else predictions
+        # 1. Preprocess test data
+        try:
+            print("\nStarting preprocessing steps...")
+            X_test = test_data.copy()
+
+            # Handle missing values
+            print("Handling missing values...")
+            missing_strategy = missing_data_config.get('strategy')
+
+            if missing_strategy == 'imputation':
+                imputer_method = missing_data_config.get('imputation_method', 'mean')
+                if imputer_method == 'constant':
+                    constant_value = missing_data_config.get('constant_value', 0)
+                    imputer = SimpleImputer(strategy='constant', fill_value=constant_value)
+                else:
+                    imputer = SimpleImputer(strategy=imputer_method)
+                X_test = pd.DataFrame(imputer.fit_transform(X_test), columns=X_test.columns)
+            elif missing_strategy == 'drop_rows':
+                X_test = X_test.dropna()
+
+            # Encode categorical variables
+            print("Encoding categorical variables...")
+            X_test = detect_and_encode_categorical(X_test)
+            print(f"Columns after categorical encoding: {X_test.columns.tolist()}")
+
+            # Scale features
+            print("Scaling features...")
+            scaler = StandardScaler()
+            scaler2 = MinMaxScaler()
+            X_test = pd.DataFrame(scaler.fit_transform(X_test), columns=X_test.columns)
+            X_test = pd.DataFrame(scaler2.fit_transform(X_test), columns=X_test.columns)
+
+            # Feature reduction if used in training
+            if preprocessing_config.get('feature_reduction') == 'pca':
+                print("Applying PCA feature reduction...")
+                pca = PCA(n_components=0.95)
+                X_test = pd.DataFrame(pca.fit_transform(X_test))
+
+            print(f"Final preprocessed data shape: {X_test.shape}")
+            print(f"Final columns: {X_test.columns.tolist()}")
+
+        except Exception as e:
+            print(f"{Fore.RED}Error during preprocessing:{Style.RESET_ALL}")
+            traceback.print_exc()
+            raise ValueError(f"Error during data preprocessing: {str(e)}")
+
+        # 2. Generate predictions
+        try:
+            print("\nGenerating predictions...")
+            predictions = le.inverse_transform(automl_instance.predict(X_test))
+            print(f"Successfully generated {len(predictions)} predictions")
+
+            # For classification problems, get probabilities if available
+            if config.get('problem_type') == 'classification':
+                try:
+                    probabilities = automl_instance.predict_proba(X_test)
+                    print("Generated prediction probabilities")
+                except:
+                    probabilities = None
+                    print("Could not generate prediction probabilities")
+
+        except Exception as e:
+            print(f"{Fore.RED}Error during prediction:{Style.RESET_ALL}")
+            traceback.print_exc()
+            raise ValueError(f"Error generating predictions: {str(e)}")
+
+        # 3. Combine predictions with original data
+        try:
+            prediction_column = f'Predicted_{target_column}'
+            test_data[prediction_column] = predictions
+
+            if config.get('problem_type') == 'classification' and probabilities is not None:
+                for i, prob in enumerate(probabilities.T):
+                    test_data[f'Probability_Class_{i}'] = prob
+
+            response_data = {
+                "headers": test_data.columns.tolist(),
+                "rows": test_data.to_dict('records'),
+                "num_predictions": len(predictions),
+                "prediction_column": prediction_column
+            }
+
+            print(f"\n{Fore.GREEN}Successfully completed prediction process{Style.RESET_ALL}")
+            return jsonify(response_data), 200
+
+        except Exception as e:
+            raise ValueError(f"Error formatting prediction results: {str(e)}")
+    
+
+    except Exception as e:
+        error_msg = str(e)
+        traceback_str = traceback.format_exc()
+        print(f"\n{Fore.RED}=== Error in Upload or Prediction Process ==={Style.RESET_ALL}")
+        print(f"Error message: {error_msg}")
+        print(f"Traceback:\n{traceback_str}")
         
         return jsonify({
-            "predictions": predictions_list,
-            "num_predictions": len(predictions_list)
-        }), 200
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+            "error": error_msg,
+            "traceback": traceback_str,
+            "status": "error"
+        }), 500
+    
 
 if __name__ == '__main__':
     
-    app.run(debug=False)
+    app.run(debug=True)
 
     
     
