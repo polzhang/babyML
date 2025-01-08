@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import FileDropZone from './FileDropZone';
+import FileDropZone from '@/components/FileDropZone';
 import FileInfo from './FileInfo';
 import Table from './Table';
 import * as XLSX from 'xlsx';
@@ -123,13 +123,13 @@ const Predictionsviewer: React.FC<PredictionsviewerProps> = ({
   return (
     <div className={`bg-white ${className}`}>
       {/* Fixed height container with padding */}
-      <div className="h-[300px] p- flex flex-col">
+      <div className="h-[300px] flex flex-col">
         {!data && !fileName ? (
           /* Wrap FileDropZone in a div that takes remaining height */
-          <div className="flex-1 flex items-center justify-center p-2">
-            <div className="w-full h-full">
-              <FileDropZone onFileSelect={parseExcel} />
-            </div>
+          <div className="flex-1 items-center justify-center ">
+            
+            <FileDropZone onFileSelect={parseExcel} />
+
           </div>
         ) : (
           <div className="mt-4 h-full">
@@ -143,9 +143,7 @@ const Predictionsviewer: React.FC<PredictionsviewerProps> = ({
               />
             </div>
             
-              <p className="relative mt-2 text-sm text-gray-500">
-                Showing first 100 rows of {displayData.rows.length} total rows
-              </p>
+            <p className="relative mt-2 text-sm text-gray-500"> {displayData.rows.length > 100 ? `Showing first 100 rows of ${displayData.rows.length} total rows` : `Showing all ${displayData.rows.length} rows`} </p>
             
       
           </div>

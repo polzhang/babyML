@@ -17,17 +17,22 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
     headers: string[];
     rows: Record<string, string>[];
   } | null>(null);
+  const [fileUploaded, setFileUploaded] = useState(false);
 
-  const handleFileUpload = async (data: { headers: string[]; rows: Record<string, string>[] }, fileName: string) => {
-    if (!fileName) return;
+  const handleFileUpload = async (data: { headers: string[]; rows: Record<string, string>[] } | null, fileName: string) => {
+    if (!data || !fileName) {
+      setPredictResults(null);
+      setFileUploaded(false);
+      return;
+    }
 
     setLoading(true);
     setError('');
     setDetailedError('');
+    setFileUploaded(true);
     console.log('Starting prediction process with file:', fileName);
 
     try {
-      // Create CSV from data
       const csvContent = [
         data.headers.join(','),
         ...data.rows.map(row => data.headers.map(header => row[header] || '').join(','))
@@ -37,7 +42,6 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
       const formData = new FormData();
       formData.append('file', file);
 
-      // Make prediction request
       console.log('Sending prediction request...');
       const response = await fetch('http://localhost:5000/upload-and-predict', {
         method: 'POST',
@@ -66,10 +70,10 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
 
     } catch (err) {
       console.error('Prediction error:', err);
-      
+
       if (err instanceof Error) {
         setError(err.message);
-        // If the error response contains a traceback, show it
+
         const errorResponse = err as any;
         if (errorResponse.traceback) {
           setDetailedError(errorResponse.traceback);
@@ -82,6 +86,25 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
     }
   };
 
+  const downloadPredictions = () => {
+    if (!predictResults) return;
+
+    const csvContent = [
+      predictResults.headers.join(','),
+      ...predictResults.rows.map(row => 
+        predictResults.headers.map(header => row[header] || '').join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'predictions.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <Card className="w-full mx-auto">
       <CardHeader>
@@ -91,7 +114,7 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div>
+        <div> 
           <Predictionsviewer
             onFileUpload={handleFileUpload}
             initialData={predictResults}
@@ -105,13 +128,13 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
             </Alert>
           )}
 
-          {error && (
-            <Alert variant="destructive">
+          {error && fileUploaded && (
+            <Alert variant="destructive" className="mt-10">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                <div className="font-medium">Error: {error}</div>
+                <div className="mt-1.5 font-medium">Error: {error}</div>
                 {detailedError && (
-                  <div className="mt-2 text-xs whitespace-pre-wrap font-mono">
+                  <div className="text-xs whitespace-pre-wrap font-mono">
                     {detailedError}
                   </div>
                 )}
@@ -120,47 +143,25 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
           )}
         </div>
 
-        {predictResults && (
-  <div className="flex justify-between mt-12">
+        <div className="flex justify-between mt-12">
+          <Button 
+            variant="outline" 
+            onClick={onBack}
+            className="hover:bg-gray-100"
+          >
+            Back to Training
+          </Button>
 
-    <Button 
-      variant="outline" 
-      onClick={onBack}
-      className="hover:bg-gray-100"
-    >
-      Back to Training
-    </Button>
-
-    <Button
-      onClick={() => {
-        const csvContent = [
-          predictResults.headers.join(','),
-          ...predictResults.rows.map(row => 
-            predictResults.headers.map(header => row[header] || '').join(',')
-          )
-        ].join('\n');
-
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'predictions.csv';
-        a.click();
-        window.URL.revokeObjectURL(url);
-      }}
-    >
-      Download Predictions
-    </Button>
-  </div>
-)}
-
-          
-
-        
-
+          {predictResults && (
+            <Button
+              onClick={downloadPredictions}
+            >
+              Download Predictions
+            </Button>
+          )}
+        </div>
 
       </CardContent>
-      
     </Card>
   );
 };

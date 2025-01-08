@@ -40,11 +40,11 @@ const FileDropZone = ({ onFileSelect }: FileDropZone2Props) => {
         className={`
           w-full 
           h-full 
-          border-2 
+          border-2
           border-dashed 
           rounded-lg 
           transition-colors
-          ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}
+          ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-500 hover:bg-blue-50'}
         `}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -57,7 +57,7 @@ const FileDropZone = ({ onFileSelect }: FileDropZone2Props) => {
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         />
         <div className="flex flex-col items-center justify-center h-full gap-4 px-4">
-          <Upload className={`w-12 h-12 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} />
+          <Upload className={`w-12 h-12 text-gray-400`} />
           <div className="text-center">
             <p className="text-xl font-medium text-gray-700">Drag and drop your file here</p>
             <p className="mt-1 text-l text-gray-500">or click to browse</p>

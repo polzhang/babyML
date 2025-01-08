@@ -143,9 +143,7 @@ const FileUploadViewer: React.FC<FileUploadViewerProps> = ({
               />
             </div>
             
-              <p className="relative mt-2 text-sm text-gray-500">
-                Showing first 100 rows of {displayData.rows.length} total rows
-              </p>
+            <p className="relative mt-2 text-sm text-gray-500"> {displayData.rows.length > 100 ? `Showing first 100 rows of ${displayData.rows.length} total rows` : `Showing all ${displayData.rows.length} rows`} </p>
             
             <div className="relative flex justify-end mt-6">
               <Button

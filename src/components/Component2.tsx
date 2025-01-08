@@ -184,7 +184,7 @@ const Component2: React.FC<{
         <ConsoleOutput logs={logs} />
         <div className="mt-4 flex justify-between">
           <Button variant="outline" onClick={handleBackButtonClick}>Back</Button>
-          {trainingComplete && (
+          {trainingComplete &&  (
             <Button onClick={handleNext}>
               Next
             </Button>
