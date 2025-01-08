@@ -90,7 +90,7 @@ const Component2: React.FC<{
   const [logs, setLogs] = useState<string[]>([]);
   const [isTraining, setIsTraining] = useState(false);
   const [eventSource, setEventSource] = useState<EventSource | null>(null);
-
+    const handleBackButtonClick = () => { setIsTraining(false); };
   useEffect(() => {
     const eventSource = new EventSource('http://localhost:5000/stream-logs');
     
@@ -113,6 +113,7 @@ const Component2: React.FC<{
     // Fetch column names from the backend (Flask API)
     axios.get('http://localhost:5000/get-columns')
       .then(response => {
+        console.log("Received columns from server:", response.data.columns);
         setColumns(response.data.columns);  // Set the column names in state
       })
       .catch(error => {
@@ -182,7 +183,7 @@ const Component2: React.FC<{
       <div>
         <ConsoleOutput logs={logs} />
         <div className="mt-4 flex justify-between">
-          <Button variant="outline" onClick={handleBack}>Back</Button>
+          <Button variant="outline" onClick={handleBackButtonClick}>Back</Button>
           {trainingComplete && (
             <Button onClick={handleNext}>
               Next

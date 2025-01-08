@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Upload, AlertCircle } from "lucide-react";
-import FileUploadViewer from "@/components/FileUploadViewer";
+import Predictionsviewer from "@/components/Predictionsviewer";
 
 interface ExportPredictProps {
   onBack: () => void;
@@ -90,9 +90,9 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
           Upload your test data to generate predictions
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-4">
-          <FileUploadViewer
+      <CardContent>
+        <div>
+          <Predictionsviewer
             onFileUpload={handleFileUpload}
             initialData={predictResults}
             className="w-full"
@@ -101,7 +101,7 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
           {loading && (
             <Alert>
               <Upload className="h-4 w-4 animate-spin" />
-              <AlertDescription>Processing predictions...</AlertDescription>
+              <AlertDescription>Generating predictions...</AlertDescription>
             </Alert>
           )}
 
@@ -118,43 +118,49 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
               </AlertDescription>
             </Alert>
           )}
-
-          {predictResults && (
-            <div className="flex justify-end space-x-4">
-              <Button
-                onClick={() => {
-                  const csvContent = [
-                    predictResults.headers.join(','),
-                    ...predictResults.rows.map(row => 
-                      predictResults.headers.map(header => row[header] || '').join(',')
-                    )
-                  ].join('\n');
-
-                  const blob = new Blob([csvContent], { type: 'text/csv' });
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'predictions.csv';
-                  a.click();
-                  window.URL.revokeObjectURL(url);
-                }}
-              >
-                Download Predictions
-              </Button>
-            </div>
-          )}
         </div>
 
-        <div className="flex justify-start mt-6">
-          <Button 
-            variant="outline" 
-            onClick={onBack}
-            className="hover:bg-gray-100"
-          >
-            Back to Training
-          </Button>
-        </div>
+        {predictResults && (
+  <div className="flex justify-between mt-12">
+
+    <Button 
+      variant="outline" 
+      onClick={onBack}
+      className="hover:bg-gray-100"
+    >
+      Back to Training
+    </Button>
+
+    <Button
+      onClick={() => {
+        const csvContent = [
+          predictResults.headers.join(','),
+          ...predictResults.rows.map(row => 
+            predictResults.headers.map(header => row[header] || '').join(',')
+          )
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'predictions.csv';
+        a.click();
+        window.URL.revokeObjectURL(url);
+      }}
+    >
+      Download Predictions
+    </Button>
+  </div>
+)}
+
+          
+
+        
+
+
       </CardContent>
+      
     </Card>
   );
 };

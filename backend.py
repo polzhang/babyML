@@ -91,7 +91,7 @@ def start_training():
 @app.route('/get-columns', methods=['GET'])
 def get_columns():
     global uploaded_file_data
-    print("get_columns called, uploaded_file_data is:", "None" if uploaded_file_data is None else "present")
+    print("get-columns called, current columns:", list(uploaded_file_data.columns))
     if uploaded_file_data is None:
         return jsonify({"error": "No data uploaded"}), 400
     columns = list(uploaded_file_data.columns)
