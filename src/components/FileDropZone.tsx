@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useState, useRef, ChangeEvent, DragEvent } from 'react';
 import { Upload } from 'lucide-react';
 
@@ -38,11 +36,12 @@ const FileDropZone = ({ onFileSelect }: FileDropZone2Props) => {
       <div
         ref={dropZoneRef}
         className={`
+          relative
           w-full 
-          h-full 
+          h-full
           border-2
           border-dashed 
-          rounded-lg 
+          rounded-lg
           transition-colors
           ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-500 hover:bg-blue-50'}
         `}
@@ -54,10 +53,11 @@ const FileDropZone = ({ onFileSelect }: FileDropZone2Props) => {
           type="file"
           onChange={handleFileChange}
           accept=".csv,.xlsx,.xls"
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          className="absolute w-full h-full opacity-0 cursor-pointer z-10"
+          style={{ top: 0, left: 0, right: 0, bottom: 0 }}
         />
         <div className="flex flex-col items-center justify-center h-full gap-4 px-4">
-          <Upload className={`w-12 h-12 text-gray-400`} />
+          <Upload className="w-12 h-12 text-gray-400" />
           <div className="text-center">
             <p className="text-xl font-medium text-gray-700">Drag and drop your file here</p>
             <p className="mt-1 text-l text-gray-500">or click to browse</p>
