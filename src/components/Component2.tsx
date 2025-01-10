@@ -157,7 +157,8 @@ const Component2: React.FC<{
         metric: optimizationMetric
       }
     };
-  
+    
+
     axios.post('http://localhost:5000/setup-training', config)
       .then(response => {
         console.log('Training results:', response.data);

@@ -18,6 +18,10 @@ from colorama import Fore, Style
 from flaml.automl.logger import logger as flaml_logger
 
 
+
+
+
+
 log_queue = queue.Queue()
 
 class QueueHandler(logging.Handler):
@@ -54,9 +58,12 @@ CORS(app, resources={
 })
 
 
-uploaded_file_data = None #TRAIN DATA
-automl_instance = None
-
+global_state = {
+    'uploaded_file_data': None,
+    'test_data': None,
+    'automl_instance': None,
+    'config': None
+}
 
 
 
@@ -90,25 +97,37 @@ def start_training():
 
 @app.route('/get-columns', methods=['GET'])
 def get_columns():
-    global uploaded_file_data
-    print("get-columns called, current columns:", list(uploaded_file_data.columns))
-    if uploaded_file_data is None:
+    global global_state
+    print("get-columns called, current columns:", list(global_state['uploaded_file_data'].columns))
+    if global_state['uploaded_file_data'] is None:
         return jsonify({"error": "No data uploaded"}), 400
-    columns = list(uploaded_file_data.columns)
+    columns = list(global_state['uploaded_file_data'].columns)
     print("Returning columns:", columns)
     return jsonify({"columns": columns}), 200
 
 @app.route('/set-config', methods=['POST'])
 def set_config():
-    global config
-    config = request.json
-    print("Received configuration:", config)
-    return jsonify({"message": "Configuration received successfully!"}), 200
+    global global_state
+    try:
+        global_state['config'] = request.json
+        print(f"\n{colorama.Fore.GREEN}Received configuration:{colorama.Style.RESET_ALL}")
+        print(json.dumps(global_state['config'], indent=2))
+        return jsonify({"message": "Configuration received successfully!", "config": global_state['config']}), 200
+    except Exception as e:
+        print(f"\n{colorama.Fore.RED}Error setting config: {str(e)}{colorama.Style.RESET_ALL}")
+        return jsonify({"error": f"Failed to set configuration: {str(e)}"}), 500
+
+@app.route('/get-config', methods=['GET'])
+def get_config():
+    global global_state
+    if global_state['config'] is None:
+        return jsonify({"error": "No configuration set"}), 404
+    return jsonify({"config": global_state['config']}), 200
 
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    global uploaded_file_data
+    global global_state
     print(f"\n{Fore.GREEN}=== Received File Upload Request ==={Style.RESET_ALL}")
 
     if 'file' not in request.files:
@@ -134,25 +153,25 @@ def upload_file():
         if file_extension == 'csv':
             # For CSV files, use StringIO
             file_stream = io.StringIO(file_content.decode("utf-8"))
-            uploaded_file_data = pd.read_csv(file_stream)
+            global_state['uploaded_file_data'] = pd.read_csv(file_stream)
         elif file_extension in ['xls', 'xlsx']:
             # For Excel files, use BytesIO
             file_stream = io.BytesIO(file_content)
-            uploaded_file_data = pd.read_excel(file_stream)
+            global_state['uploaded_file_data'] = pd.read_excel(file_stream)
         else:
             print(f"{Fore.RED}Error: Unsupported file type: {file_extension}{Style.RESET_ALL}")
             return jsonify({"error": "Unsupported file type"}), 400
 
         print(f"\n{Fore.CYAN}=== DataFrame Info ==={Style.RESET_ALL}")
-        print(f"Shape: {uploaded_file_data.shape}")
+        print(f"Shape: {global_state['uploaded_file_data'].shape}")
         print("\nColumns:")
-        for col in uploaded_file_data.columns:
+        for col in global_state['uploaded_file_data'].columns:
             print(f"- {col}")
 
         return jsonify({
             "message": "File uploaded successfully",
-            "columns": list(uploaded_file_data.columns),
-            "rows": len(uploaded_file_data)
+            "columns": list(global_state['uploaded_file_data'].columns),
+            "rows": len(global_state['uploaded_file_data'])
         }), 200
 
     except UnicodeDecodeError as e:
@@ -215,7 +234,7 @@ def detect_and_encode_categorical(df, max_unique_ratio=0.05):
 
 @app.route('/setup-training', methods=['POST'])
 def setup_training():
-    global uploaded_file_data, automl_instance, config
+    global_state
     print(f"\n{Fore.GREEN}=== Received Training Setup Request ==={Style.RESET_ALL}")
     
     # Clear the log queue before starting new training
@@ -226,31 +245,31 @@ def setup_training():
             break
     
     # Clear previous automl instance
-    if automl_instance is not None:
-        del automl_instance
-        automl_instance = None
+    if global_state['automl_instance'] is not None:
+        del global_state['automl_instance']
+        global_state['automl_instance'] = None
 
 
-    if uploaded_file_data is None:
+    if global_state['uploaded_file_data'] is None:
         return jsonify({"error": "No data uploaded"}), 400
 
     try:
-        config = request.json
+        global_state['config'] = request.json
         print(f"\n{Fore.YELLOW}Received Configuration:{Style.RESET_ALL}")
-        print(config)
+        print(global_state['config'])
 
         # Extract required values from config with defaults
-        target_column = config.get('target_variable')
-        problem_type = config.get('problem_type', 'classification')
-        validation_settings = config.get('validation', {})
+        target_column = global_state['config'].get('target_variable')
+        problem_type = global_state['config'].get('problem_type', 'classification')
+        validation_settings = global_state['config'].get('validation', {})
         validation_method = validation_settings.get('method', 'holdout')
         split_ratio = validation_settings.get('split_ratio', 0.8)  # Default to 0.8 if not provided
         
         if not target_column:
             return jsonify({"error": "Target variable not specified"}), 400
 
-        X = uploaded_file_data.drop(columns=[target_column])
-        y = uploaded_file_data[target_column]
+        X = global_state['uploaded_file_data'].drop(columns=[target_column])
+        y = global_state['uploaded_file_data'][target_column]
 
         # Classification preprocessing
         if problem_type == 'classification':
@@ -273,7 +292,7 @@ def setup_training():
             y = y.astype(float)
 
         # Handle missing data
-        preprocessing_config = config.get('preprocessing', {})
+        preprocessing_config = global_state['config'].get('preprocessing', {})
         missing_data_config = preprocessing_config.get('missing_data', {})
         missing_strategy = missing_data_config.get('strategy')
 
@@ -316,13 +335,13 @@ def setup_training():
         print(f"X_test: {X_test.shape}")
 
         # FLAML setup
-        automl_instance = AutoML()
+        global_state['automl_instance'] = AutoML()
         settings = {
-            'time_budget': config.get('time_budget') ,  # seconds
+            'time_budget': global_state['config'].get('time_budget') ,  # seconds
             'metric': validation_settings.get('metric', 'accuracy' if problem_type == 'classification' else 'r2'),
             'task': problem_type,
             'n_jobs': -1,
-            'estimator_list': config.get('models', {}).get('selected', ['lgbm', 'rf', 'xgboost', 'extra_tree']),
+            'estimator_list': global_state['config'].get('models', {}).get('selected', ['lgbm', 'rf', 'xgboost', 'extra_tree']),
             'eval_method': validation_method
         }
 
@@ -334,14 +353,14 @@ def setup_training():
         print(f"\n{Fore.YELLOW}=== Starting FLAML Training ==={Style.RESET_ALL}")
         print("Settings:", settings)
 
-        automl_instance.fit(
+        global_state['automl_instance'].fit(
             X_train=X_train,
             y_train=y_train,
             **settings
         )
 
-        best_model = automl_instance.model.estimator
-        best_model = automl_instance.model.estimator
+        best_model = global_state['automl_instance'].model.estimator
+        best_model = global_state['automl_instance'].model.estimator
         
         # Calculate additional metrics based on problem type
         if problem_type == 'classification':
@@ -350,8 +369,8 @@ def setup_training():
                 roc_auc_score, precision_recall_fscore_support
             )
             
-            y_pred = automl_instance.predict(X_test)
-            y_pred_proba = automl_instance.predict_proba(X_test)
+            y_pred = global_state['automl_instance'].predict(X_test)
+            y_pred_proba = global_state['automl_instance'].predict_proba(X_test)
             
             # Get classification metrics
             class_report = classification_report(y_test, y_pred, output_dict=True)
@@ -370,9 +389,9 @@ def setup_training():
                 "classification_report": class_report,
                 "confusion_matrix": conf_matrix,
                 "roc_auc_score": roc_auc,
-                "training_time": automl_instance.time_to_find_best_model,
-                "models_trained": len(automl_instance.estimator_list),
-                "best_iteration": automl_instance.best_iteration
+                "training_time": global_state['automl_instance'].time_to_find_best_model,
+                "models_trained": len(global_state['automl_instance'].estimator_list),
+                "best_iteration": global_state['automl_instance'].best_iteration
             }
             
             print(f"\n{Fore.CYAN}=== Detailed Metrics ==={Style.RESET_ALL}")
@@ -394,7 +413,7 @@ def setup_training():
                 r2_score, mean_absolute_percentage_error
             )
             
-            y_pred = automl_instance.predict(X_test)
+            y_pred = global_state['automl_instance'].predict(X_test)
             
             mse = mean_squared_error(y_test, y_pred)
             rmse = np.sqrt(mse)
@@ -412,9 +431,9 @@ def setup_training():
                 "mse": mse,
                 "r2": r2,
                 "mape": mape,
-                "training_time": automl_instance.time_to_find_best_model,
-                "models_trained": len(automl_instance.estimator_list),
-                "best_iteration": automl_instance.best_iteration
+                "training_time": global_state['automl_instance'].time_to_find_best_model,
+                "models_trained": len(global_state['automl_instance'].estimator_list),
+                "best_iteration": global_state['automl_instance'].best_iteration
             }
             
             print(f"\n{Fore.CYAN}=== Detailed Metrics ==={Style.RESET_ALL}")
@@ -434,7 +453,7 @@ def setup_training():
 
         # Get feature importance if available
         try:
-            feature_importance = automl_instance.feature_importance()
+            feature_importance = global_state['automl_instance'].feature_importance()
             if isinstance(feature_importance, pd.Series):
                 feature_importance = feature_importance.to_dict()
         except:
@@ -442,14 +461,14 @@ def setup_training():
 
         print(f"\n{Fore.GREEN}=== Training Complete ==={Style.RESET_ALL}")
         print(f"Best ML learner: {best_model.__class__.__name__}")
-        print(f"Best hyperparameter config: {automl_instance.best_config}")
-        print(f"Training time: {automl_instance.time_to_find_best_model:.2f} seconds")
-        print(f"Models trained: {len(automl_instance.estimator_list)}")
+        print(f"Best hyperparameter config: {global_state['automl_instance'].best_config}")
+        print(f"Training time: {global_state['automl_instance'].time_to_find_best_model:.2f} seconds")
+        print(f"Models trained: {len(global_state['automl_instance'].estimator_list)}")
 
         response = {
             "status": "success",
             "best_estimator": best_model.__class__.__name__,
-            "best_config": automl_instance.best_config,
+            "best_config": global_state['automl_instance'].best_config,
             "metrics": metrics,
             "feature_importance": feature_importance
         }
@@ -466,17 +485,27 @@ def setup_training():
             "traceback": traceback.format_exc()
         }), 500
 
+# Modify the upload_and_predict route
 @app.route('/upload-and-predict', methods=['POST'])
 def upload_and_predict():
     """Handle both test data upload and prediction."""
-    global test_data, config, automl_instance
-    print("upload_and_predict called")
-    print("uploaded_file_data before:", "None" if uploaded_file_data is None else "present")
-    target_column = config.get('target_variable')
+    global global_state
+    print(f"\n{colorama.Fore.CYAN}=== Starting Prediction Process ==={colorama.Style.RESET_ALL}")
+    print(f"Current config state: {global_state['config']}")
+    
+    if global_state['config'] is None:
+        print(f"{colorama.Fore.RED}Error: No configuration found{colorama.Style.RESET_ALL}")
+        return jsonify({"error": "No configuration found. Please set up training first."}), 400
+    
+    # Then verify target variable exists in config
+    target_column = global_state['config'].get('target_variable')
     if not target_column:
-        print(f"{Fore.RED}Error: 'target_variable' not found in config{Style.RESET_ALL}")
-        return jsonify({"error": "'target_variable' not found in config"}), 400
-
+        print(f"{colorama.Fore.RED}Error: 'target_variable' not found in config{colorama.Style.RESET_ALL}")
+        print(f"Current config: {json.dumps(global_state['config'], indent=2)}")
+        return jsonify({
+            "error": "'target_variable' not found in config",
+            "current_config": global_state['config']
+        }), 400
 
     print(f"\n{Fore.GREEN}=== Received Request for Upload and Prediction ==={Style.RESET_ALL}")
 
@@ -489,58 +518,37 @@ def upload_and_predict():
         print(f"{Fore.RED}Error: No selected file{Style.RESET_ALL}")
         return jsonify({"error": "No selected file"}), 400
 
-    print("uploaded_file_data after:", "None" if uploaded_file_data is None else "present")
     try:
         # Save the file content
         file_content = file.read()
         file.seek(0)  # Reset file pointer
         
-        print(f"File name: {file.filename}")
-        print(f"File content length: {len(file_content)} bytes")
-        
-        file_extension = file.filename.split('.')[-1].lower()
-        print(f"File extension: {file_extension}")
-
         # Upload file
+        file_extension = file.filename.split('.')[-1].lower()
         if file_extension == 'csv':
             file_stream = io.StringIO(file_content.decode("utf-8"))
-            test_data = pd.read_csv(file_stream)
+            global_state['test_data'] = pd.read_csv(file_stream)
         elif file_extension in ['xls', 'xlsx']:
             file_stream = io.BytesIO(file_content)
-            test_data = pd.read_excel(file_stream)
+            global_state['test_data'] = pd.read_excel(file_stream)
         else:
-            print(f"{Fore.RED}Error: Unsupported file type: {file_extension}{Style.RESET_ALL}")
             return jsonify({"error": "Unsupported file type"}), 400
 
-        print(f"\n{Fore.CYAN}=== Uploaded Test DataFrame Info ==={Style.RESET_ALL}")
-        print(f"Shape: {test_data.shape}")
-        print("\nColumns:")
-        for col in test_data.columns:
-            print(f"- {col}")
-
-        # Get config from form data
-        config_str = request.form.get('config', '{}')
-        try:
-            config = json.loads(config_str)
-        except:
-            config = {}
-
-        preprocessing_config = config.get('preprocessing', {})
+        preprocessing_config = global_state['config'].get('preprocessing', {})
         missing_data_config = preprocessing_config.get('missing_data', {})
         
-        # Check for automl_instance
-        if automl_instance is None:
+        # Check for global_state['automl_instance']
+        if global_state['automl_instance'
+        ] is None:
             raise ValueError("No trained model available. Please train the model first.")
         
         # 1. Preprocess test data
         try:
             print("\nStarting preprocessing steps...")
-            X_test = test_data.copy()
+            X_test = global_state['test_data'].copy()
 
             # Handle missing values
-            print("Handling missing values...")
             missing_strategy = missing_data_config.get('strategy')
-
             if missing_strategy == 'imputation':
                 imputer_method = missing_data_config.get('imputation_method', 'mean')
                 if imputer_method == 'constant':
@@ -553,12 +561,9 @@ def upload_and_predict():
                 X_test = X_test.dropna()
 
             # Encode categorical variables
-            print("Encoding categorical variables...")
             X_test = detect_and_encode_categorical(X_test)
-            print(f"Columns after categorical encoding: {X_test.columns.tolist()}")
-
+            
             # Scale features
-            print("Scaling features...")
             scaler = StandardScaler()
             scaler2 = MinMaxScaler()
             X_test = pd.DataFrame(scaler.fit_transform(X_test), columns=X_test.columns)
@@ -566,12 +571,8 @@ def upload_and_predict():
 
             # Feature reduction if used in training
             if preprocessing_config.get('feature_reduction') == 'pca':
-                print("Applying PCA feature reduction...")
                 pca = PCA(n_components=0.95)
                 X_test = pd.DataFrame(pca.fit_transform(X_test))
-
-            print(f"Final preprocessed data shape: {X_test.shape}")
-            print(f"Final columns: {X_test.columns.tolist()}")
 
         except Exception as e:
             print(f"{Fore.RED}Error during preprocessing:{Style.RESET_ALL}")
@@ -580,18 +581,14 @@ def upload_and_predict():
 
         # 2. Generate predictions
         try:
-            print("\nGenerating predictions...")
-            predictions = le.inverse_transform(automl_instance.predict(X_test))
-            print(f"Successfully generated {len(predictions)} predictions")
+            predictions = le.inverse_transform(global_state['automl_instance'].predict(X_test))
 
             # For classification problems, get probabilities if available
-            if config.get('problem_type') == 'classification':
+            if global_state['config'].get('problem_type') == 'classification':
                 try:
-                    probabilities = automl_instance.predict_proba(X_test)
-                    print("Generated prediction probabilities")
+                    probabilities = global_state['automl_instance'].predict_proba(X_test)
                 except:
                     probabilities = None
-                    print("Could not generate prediction probabilities")
 
         except Exception as e:
             print(f"{Fore.RED}Error during prediction:{Style.RESET_ALL}")
@@ -601,15 +598,15 @@ def upload_and_predict():
         # 3. Combine predictions with original data
         try:
             prediction_column = f'Predicted_{target_column}'
-            test_data[prediction_column] = predictions
+            global_state['test_data'][prediction_column] = predictions
 
-            if config.get('problem_type') == 'classification' and probabilities is not None:
+            if global_state['config'].get('problem_type') == 'classification' and probabilities is not None:
                 for i, prob in enumerate(probabilities.T):
-                    test_data[f'Probability_Class_{i}'] = prob
+                    global_state['test_data'][f'Probability_Class_{i}'] = prob
 
             response_data = {
-                "headers": test_data.columns.tolist(),
-                "rows": test_data.to_dict('records'),
+                "headers": global_state['test_data'].columns.tolist(),
+                "rows": global_state['test_data'].to_dict('records'),
                 "num_predictions": len(predictions),
                 "prediction_column": prediction_column
             }
@@ -619,7 +616,6 @@ def upload_and_predict():
 
         except Exception as e:
             raise ValueError(f"Error formatting prediction results: {str(e)}")
-    
 
     except Exception as e:
         error_msg = str(e)
