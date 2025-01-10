@@ -5,7 +5,7 @@ import FileDropZone from '@/components/FileDropZone';
 import FileInfo from './FileInfo';
 import Table from './Table';
 import * as XLSX from 'xlsx';
-import { Button } from '@/components/ui/button';
+
 
 interface PredictionsviewerProps {
   className?: string;
@@ -17,7 +17,6 @@ interface PredictionsviewerProps {
 
 const Predictionsviewer: React.FC<PredictionsviewerProps> = ({ 
   className,
-  handleNext,
   onFileUpload,
   initialData,
   initialFileName

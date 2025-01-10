@@ -79,17 +79,12 @@ const Component2: React.FC<{
     setOptimizationMetric(problemType === 'classification' ? 'f1' : 'r2');
   }, [problemType]);
 
-  const handleProblemTypeChange = (value) => {
-    setProblemType(value); // Updates problem type
-  };
-
 
   // Columns State for Target Variable Select
   const [columns, setColumns] = useState([]);
 
   const [logs, setLogs] = useState<string[]>([]);
   const [isTraining, setIsTraining] = useState(false);
-  const [eventSource, setEventSource] = useState<EventSource | null>(null);
     const handleBackButtonClick = () => { setIsTraining(false); };
   useEffect(() => {
     const eventSource = new EventSource('http://localhost:5000/stream-logs');
