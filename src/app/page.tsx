@@ -3,7 +3,7 @@ import * as React from 'react';
 import { Box, Stepper, Step, StepLabel, Button, Typography } from '@mui/material';
 import FileUploadViewer from '@/components/FileUploadViewer';
 import Component2 from '@/components/Component2';
-import ExportPredict from '@/components/ExportPredict'; 
+import ExportPredict from '@/components/ExportPredict';
 
 // Types
 interface FileData {
