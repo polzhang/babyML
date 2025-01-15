@@ -5,7 +5,7 @@ import time
 import logging
 import traceback
 from flask import Flask, request, jsonify, Response, stream_with_context
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from flaml import AutoML
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder, OneHotEncoder
@@ -75,6 +75,7 @@ global_state = {
 
 
 @app.route('/stream-logs')
+@cross_origin(origin='*')
 def stream_logs_endpoint():
     def generate():
         while True:
@@ -97,12 +98,14 @@ def stream_logs_endpoint():
 
 
 @app.route('/start-training', methods=['POST'])
+@cross_origin(origin='*')
 def start_training():
     """Simulated endpoint for starting the training process."""
     # Here you can invoke the terminal command or script that runs your training.
     return jsonify({"message": "Training setup started!"}), 200
 
 @app.route('/get-columns', methods=['GET'])
+@cross_origin(origin='*')
 def get_columns():
     global global_state
     print("get-columns called, current columns:", list(global_state['uploaded_file_data'].columns))
@@ -113,6 +116,7 @@ def get_columns():
     return jsonify({"columns": columns}), 200
 
 @app.route('/set-config', methods=['POST'])
+@cross_origin(origin='*')
 def set_config():
     global global_state
     try:
@@ -125,6 +129,7 @@ def set_config():
         return jsonify({"error": f"Failed to set configuration: {str(e)}"}), 500
 
 @app.route('/get-config', methods=['GET'])
+@cross_origin(origin='*')
 def get_config():
     global global_state
     if global_state['config'] is None:
@@ -133,6 +138,7 @@ def get_config():
 
 
 @app.route('/upload', methods=['POST'])
+@cross_origin(origin='*')
 def upload_file():
     global global_state
     print(f"\n{Fore.GREEN}=== Received File Upload Request ==={Style.RESET_ALL}")
@@ -240,6 +246,7 @@ def detect_and_encode_categorical(df, max_unique_ratio=0.05):
     return df_encoded
 
 @app.route('/setup-training', methods=['POST'])
+@cross_origin(origin='*')
 def setup_training():
     global_state
     print(f"\n{Fore.GREEN}=== Received Training Setup Request ==={Style.RESET_ALL}")
@@ -494,6 +501,7 @@ def setup_training():
 
 # Modify the upload_and_predict route
 @app.route('/upload-and-predict', methods=['POST'])
+@cross_origin(origin='*')
 def upload_and_predict():
     """Handle both test data upload and prediction."""
     global global_state
