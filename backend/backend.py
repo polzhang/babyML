@@ -54,7 +54,7 @@ CORS(app, resources={
         "origins": [
             "http://localhost:3000",    # Allow local development domain
             "https://babyml.onrender.com"  # Allow Render production domain
-            "https://baby-ml.vercel.app/"
+            "https://baby-ml.vercel.app"
         ],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
