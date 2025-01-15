@@ -47,7 +47,7 @@ flaml_logger.addHandler(console_handler)
 
 colorama.init()
 app = Flask(__name__)
-from flask_cors import CORS
+
 
 CORS(app, resources={
     r"/*": {
@@ -55,6 +55,7 @@ CORS(app, resources={
             "http://localhost:3000",    # Allow local development domain
             "https://babyml.onrender.com"  # Allow Render production domain
             "https://baby-ml.vercel.app"
+            "https://baby-d2zgio8n3-pauls-projects-48d3a236.vercel.app"
         ],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
