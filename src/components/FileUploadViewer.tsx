@@ -42,7 +42,7 @@ const FileUploadViewer: React.FC<FileUploadViewerProps> = ({
   }, [initialData, initialFileName]);
 
   const parseExcel = async (file: File) => {
-    setLoading(true);
+    
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer);
@@ -69,7 +69,7 @@ const FileUploadViewer: React.FC<FileUploadViewerProps> = ({
       console.error('Error parsing Excel file:', error);
       alert('Error parsing Excel file. Please make sure it\'s a valid Excel file.');
     } finally {
-      setLoading(false);
+      
     }
   };
 

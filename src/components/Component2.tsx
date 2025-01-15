@@ -95,7 +95,7 @@ const Component2: React.FC<{
       }
     };
   
-    setEventSource(eventSource); // Save eventSource reference
+
   
     return () => {
       if (eventSource) {

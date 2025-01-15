@@ -13,7 +13,7 @@ interface FileData {
 
 interface StepComponentProps {
   onNext: () => void;
-  onBack?: () => void;
+  onBack?: () => void; 
   fileData: FileData | null;
   setFileData: (data: FileData | null) => void;
   fileName: string;
@@ -46,16 +46,19 @@ const Step1Component: React.FC<StepComponentProps> = ({
 
 const Step2Component: React.FC<StepComponentProps> = ({ onNext, onBack }) => (
   <Component2
-    className="p-4 rounded-lg"
+    
     handleNext={onNext}
-    handleBack={onBack}
+    handleBack={onBack!} 
   />
 );
 
+
 const Step3Component: React.FC<StepComponentProps> = ({ onBack }) => (
   <ExportPredict
-    onBack={onBack}/>
+    onBack={onBack!}  
+  />
 );
+
 
 export default function PageContainer() {
   // State
