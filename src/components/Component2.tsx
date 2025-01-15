@@ -87,7 +87,7 @@ const Component2: React.FC<{
   const [isTraining, setIsTraining] = useState(false);
     const handleBackButtonClick = () => { setIsTraining(false); };
   useEffect(() => {
-    const eventSource = new EventSource('http://localhost:5000/stream-logs');
+    const eventSource = new EventSource('https://babyml.onrender.com/stream-logs');
     
     eventSource.onmessage = (event) => {
       if (event.data !== 'heartbeat') {
@@ -106,7 +106,7 @@ const Component2: React.FC<{
 
   useEffect(() => {
     // Fetch column names from the backend (Flask API)
-    axios.get('http://localhost:5000/get-columns')
+    axios.get('https://babyml.onrender.com/get-columns')
       .then(response => {
         console.log("Received columns from server:", response.data.columns);
         setColumns(response.data.columns);  // Set the column names in state
@@ -154,7 +154,7 @@ const Component2: React.FC<{
     };
     
 
-    axios.post('http://localhost:5000/setup-training', config)
+    axios.post('https://babyml.onrender.com/setup-training', config)
       .then(response => {
         console.log('Training results:', response.data);
         const fullLogs = response.data.logs || [];

@@ -43,7 +43,7 @@ const ExportPredict: React.FC<ExportPredictProps> = ({ onBack }) => {
       formData.append('file', file);
 
       console.log('Sending prediction request...');
-      const response = await fetch('http://localhost:5000/upload-and-predict', {
+      const response = await fetch('https://babyml.onrender.com/upload-and-predict', {
         method: 'POST',
         body: formData,
       });

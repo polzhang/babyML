@@ -47,9 +47,14 @@ flaml_logger.addHandler(console_handler)
 
 colorama.init()
 app = Flask(__name__)
+from flask_cors import CORS
+
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:3000"],
+        "origins": [
+            "http://localhost:3000",    # Allow local development domain
+            "https://babyml.onrender.com"  # Allow Render production domain
+        ],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type"],
         "expose_headers": ["Content-Type"],
