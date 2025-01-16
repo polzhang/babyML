@@ -133,26 +133,24 @@ const Component2: React.FC<{
     const config = {
       target_variable: selectedTarget,
       problem_type: problemType,
-      train_test_split: trainTestSplit / 100,
-      time_budget: parseInt(timeBudget,10), 
+      time_budget: parseInt(timeBudget, 10),
       preprocessing: {
         missing_data: {
-          strategy: missingDataStrategy,
+          strategy: missingDataStrategy === 'impute' ? 'imputation' : missingDataStrategy,
           imputation_method: imputationMethod
         },
-        feature_reduction: featureReduction,
+        feature_reduction: featureReduction ? 'pca' : null,
       },
       models: {
-        ensemble: enableEnsemble,
-        selected: [] // Add model selection if needed
+        ensemble: enableEnsemble
       },
       validation: {
         method: validationMethod,
+        split_ratio: trainTestSplit / 100,  // Moved here from top level
         k_folds: parseInt(kFold),
         metric: optimizationMetric
       }
     };
-    
 
     axios.post('https://babyml.onrender.com/setup-training', config)
       .then(response => {
