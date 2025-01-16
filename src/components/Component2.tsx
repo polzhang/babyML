@@ -68,7 +68,7 @@ const Component2: React.FC<{
 
   // Model Selection State
   const [enableEnsemble, setEnableEnsemble] = useState(false);
-  const [validationMethod, setValidationMethod] = useState('auto'); // Default to Auto
+  const [validationMethod, setValidationMethod] = useState('cv'); // Default to CV
   const [kFold, setKFold] = useState('5'); // Default k-fold value
   const [optimizationMetric, setOptimizationMetric] = useState('f1'); // Default metric for classification
 
@@ -369,7 +369,7 @@ const Component2: React.FC<{
                     <SelectValue placeholder="Select Method" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">Auto (Default)</SelectItem>
+                    
                     <SelectItem value="cv">N-Fold Cross Validation</SelectItem>
                     <SelectItem value="holdout">Train-Test Split</SelectItem>
                   </SelectContent>
