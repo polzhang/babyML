@@ -268,6 +268,7 @@ def setup_training():
 
 
     if global_state['uploaded_file_data'] is None:
+        print ("Error: No data uploaded")
         return jsonify({"error": "No data uploaded"}), 400
 
     try:
