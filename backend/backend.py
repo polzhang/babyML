@@ -248,8 +248,9 @@ def detect_and_encode_categorical(df, max_unique_ratio=0.05):
     return df_encoded
 
 @app.route('/setup-training', methods=['POST'])
-
 def setup_training():
+    print("Received request data:", request.json)  # Add this line
+    print("Request content type:", request.content_type) 
     global_state
     print(f"\n{Fore.GREEN}=== Received Training Setup Request ==={Style.RESET_ALL}")
     
