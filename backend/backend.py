@@ -284,6 +284,7 @@ def setup_training():
         split_ratio = validation_settings.get('split_ratio', 0.8)  # Default to 0.8 if not provided
         
         if not target_column:
+            print("target var not specified")
             return jsonify({"error": "Target variable not specified"}), 400
 
         X = global_state['uploaded_file_data'].drop(columns=[target_column])
@@ -306,6 +307,7 @@ def setup_training():
             
         elif problem_type == 'regression':
             if not pd.api.types.is_numeric_dtype(y):
+                print("targetvar must be numeric for regression")
                 return jsonify({"error": "Target variable must be numeric for regression tasks"}), 400
             y = y.astype(float)
 
