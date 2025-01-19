@@ -19,9 +19,6 @@ from flaml.automl.logger import logger as flaml_logger
 
 
 
-
-
-
 log_queue = queue.Queue()
 
 class QueueHandler(logging.Handler):
@@ -74,7 +71,7 @@ global_state = {
 
 
 
-@app.route('/stream-logs')
+@app.route('/stream-logs') #something wrong here, maybe missing method =post/get?
 def stream_logs_endpoint():
     def generate():
         while True:
@@ -221,10 +218,10 @@ def detect_and_encode_categorical(df, max_unique_ratio=0.05):
 
 @app.route('/setup-training', methods=['POST'])
 def setup_training():
+    global global_state
     print("Received request data:", request.json)  # Add this line
     print("Request content type:", request.content_type) 
     print(f"\n{Fore.GREEN}=== Received Training Setup Request ==={Style.RESET_ALL}")
-    global global_state
 
 
     # need to fix logstreaming issue
@@ -241,8 +238,8 @@ def setup_training():
 
 
     if global_state['uploaded_file_data'] is None:
-        print ("Error: No data uploaded")
-        return jsonify({"error": "No data uploaded"}), 400
+        print ("Error: No data uploaded sians")
+        return jsonify({"error": "No data uploaded sians"}), 400
 
     try:
         global_state['config'] = request.json
