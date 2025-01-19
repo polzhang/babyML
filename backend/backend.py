@@ -1,8 +1,11 @@
 import io
+import os
 import pandas as pd
 import numpy as np
 import time
 import logging
+import redis
+import pickle
 import traceback
 from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS, cross_origin
@@ -16,7 +19,7 @@ import queue
 import json
 from colorama import Fore, Style
 from flaml.automl.logger import logger as flaml_logger
-
+from urllib.parse import urlparse
 
 
 log_queue = queue.Queue()
@@ -46,21 +49,7 @@ colorama.init()
 app = Flask(__name__)
 CORS(app, origins=["https://baby-ml.vercel.app"])
      
-#     , resources={
-#    r"/*": {
-#        "origins": [
-#            "http://localhost:3000",    # Allow local development domain
-#            "https://babyml.onrender.com"  # Allow Render production domain
-#            "https://baby-ml.vercel.app"
-#            "https://baby-d2zgio8n3-pauls-projects-48d3a236.vercel.app"
-#        ],
-#        "methods": ["GET", "POST", "OPTIONS"],
-#        "allow_headers": ["Content-Type", "Authorization"],
-#        "expose_headers": ["Content-Type"],
-#        "supports_credentials": True
-#    }
-#})
-
+REDIS_URL = os.getenv("https://enjoyed-treefrog-57366.upstash.io","redis://default:AeAWAAIjcDE1ZDAyMTM1MGZmYmI0NGM0OTQzYzFiMDBmZjNhMjViNnAxMA@enjoyed-treefrog-57366.upstash.io:6379")
 
 global_state = {
     'uploaded_file_data': None,
@@ -69,7 +58,33 @@ global_state = {
     'config': None
 }
 
+def get_redis_client():
+    try:
+        url = urlparse(REDIS_URL)
+        return redis.Redis(
+            host='enjoyed-treefrog-57366.upstash.io',
+            port=url.port or 6379,
+            username=url.username or 'default',
+            password=url.password,  # This will come from your environment variable
+            ssl=True,  # Upstash requires SSL
+            decode_responses=False,
+            socket_timeout=5
+        )
+    except Exception as e:
+        print(f"Redis connection error: {e}")
+        return None
 
+redis_client = get_redis_client()
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    if not redis_client:
+        return jsonify({"status": "error", "message": "Redis connection failed"}), 500
+    try:
+        redis_client.ping()
+        return jsonify({"status": "healthy", "message": "Connected to Redis"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/stream-logs') #something wrong here, maybe missing method =post/get?
 def stream_logs_endpoint():
@@ -97,67 +112,19 @@ def stream_logs_endpoint():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    global global_state
-    print(f"\n{Fore.GREEN}=== Received File Upload Request ==={Style.RESET_ALL}")
-
-    if 'file' not in request.files:
-        print(f"{Fore.RED}Error: No file part in request{Style.RESET_ALL}")
-        return jsonify({"error": "No file part in the request"}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        print(f"{Fore.RED}Error: No selected file{Style.RESET_ALL}")
-        return jsonify({"error": "No selected file"}), 400
+    if not redis_client:
+        return jsonify({"error": "Database connection error"}), 500
 
     try:
-        # Save the file content
-        file_content = file.read()
-        file.seek(0)  # Reset file pointer
+        pickled_data = redis_client.get('uploaded_file_data')
+        if pickled_data is None:
+            return jsonify({"error": "No data uploaded"}), 400
         
-        print(f"File name: {file.filename}")
-        print(f"File content length: {len(file_content)} bytes")
-        
-        file_extension = file.filename.split('.')[-1].lower()
-        print(f"File extension: {file_extension}")
-
-        if file_extension == 'csv':
-            # For CSV files, use StringIO
-            file_stream = io.StringIO(file_content.decode("utf-8"))
-            global_state['uploaded_file_data'] = pd.read_csv(file_stream)
-        elif file_extension in ['xls', 'xlsx']:
-            # For Excel files, use BytesIO
-            file_stream = io.BytesIO(file_content)
-            global_state['uploaded_file_data'] = pd.read_excel(file_stream)
-        else:
-            print(f"{Fore.RED}Error: Unsupported file type: {file_extension}{Style.RESET_ALL}")
-            return jsonify({"error": "Unsupported file type"}), 400
-
-        print(f"\n{Fore.CYAN}=== DataFrame Info ==={Style.RESET_ALL}")
-        print(f"Shape: {global_state['uploaded_file_data'].shape}")
-        print("\nColumns:")
-        for col in global_state['uploaded_file_data'].columns:
-            print(f"- {col}")
-
-        return jsonify({
-            "message": "File uploaded successfully",
-            "columns": list(global_state['uploaded_file_data'].columns),
-            "rows": len(global_state['uploaded_file_data'])
-        }), 200
-
-    except UnicodeDecodeError as e:
-        print(f"{Fore.RED}Error: File encoding issue: {str(e)}{Style.RESET_ALL}")
-        return jsonify({"error": "File encoding error. Please ensure the file is properly encoded"}), 500
-    except pd.errors.EmptyDataError:
-        print(f"{Fore.RED}Error: The file is empty{Style.RESET_ALL}")
-        return jsonify({"error": "The uploaded file is empty"}), 500
-    except pd.errors.ParserError as e:
-        print(f"{Fore.RED}Error parsing file: {str(e)}{Style.RESET_ALL}")
-        return jsonify({"error": "Error parsing file. Please check the file format"}), 500
+        df = pickle.loads(pickled_data)
+        return jsonify({"columns": list(df.columns)}), 200
     except Exception as e:
-        print(f"{Fore.RED}Unexpected error: {str(e)}{Style.RESET_ALL}")
-        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
-
-
+        print(f"Error getting columns: {e}")
+        return jsonify({"error": "Error retrieving columns"}), 500
 
 
 @app.route('/get-columns', methods=['GET'])
@@ -634,8 +601,8 @@ def upload_and_predict():
     
 
 if __name__ == '__main__':
-    
-    app.run(debug=True)
+    port = int(os.getenv('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
 
     
     
