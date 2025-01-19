@@ -173,25 +173,6 @@ def get_columns():
     print("Returning columns:", columns)
     return jsonify({"columns": columns}), 200
 
-@app.route('/set-config', methods=['POST'])
-def set_config():
-    global global_state
-    try:
-        global_state['config'] = request.json
-        print(f"\n{colorama.Fore.GREEN}Received configuration:{colorama.Style.RESET_ALL}")
-        print(json.dumps(global_state['config'], indent=2))
-        return jsonify({"message": "Configuration received successfully!", "config": global_state['config']}), 200
-    except Exception as e:
-        print(f"\n{colorama.Fore.RED}Error setting config: {str(e)}{colorama.Style.RESET_ALL}")
-        return jsonify({"error": f"Failed to set configuration: {str(e)}"}), 500
-
-@app.route('/get-config', methods=['GET'])
-def get_config():
-    global global_state
-    if global_state['config'] is None:
-        return jsonify({"error": "No configuration set"}), 404
-    return jsonify({"config": global_state['config']}), 200
-
 
 def detect_and_encode_categorical(df, max_unique_ratio=0.05):
     categorical_columns = []
@@ -242,10 +223,11 @@ def detect_and_encode_categorical(df, max_unique_ratio=0.05):
 def setup_training():
     print("Received request data:", request.json)  # Add this line
     print("Request content type:", request.content_type) 
-    global global_state
     print(f"\n{Fore.GREEN}=== Received Training Setup Request ==={Style.RESET_ALL}")
-    
-    # Clear the log queue before starting new training
+    global global_state
+
+
+    # need to fix logstreaming issue
     while not log_queue.empty():
         try:
             log_queue.get_nowait()
