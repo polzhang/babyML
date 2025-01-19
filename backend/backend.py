@@ -49,7 +49,7 @@ colorama.init()
 app = Flask(__name__)
 CORS(app, origins=["https://baby-ml.vercel.app"])
      
-REDIS_URL = os.getenv("https://enjoyed-treefrog-57366.upstash.io","redis://default:AeAWAAIjcDE1ZDAyMTM1MGZmYmI0NGM0OTQzYzFiMDBmZjNhMjViNnAxMA@enjoyed-treefrog-57366.upstash.io:6379")
+REDIS_URL = os.getenv('REDIS_URL')
 
 global_state = {
     'uploaded_file_data': None,
