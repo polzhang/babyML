@@ -75,7 +75,6 @@ global_state = {
 
 
 @app.route('/stream-logs')
-
 def stream_logs_endpoint():
     def generate():
         while True:
@@ -97,48 +96,9 @@ def stream_logs_endpoint():
     return response
 
 
-@app.route('/start-training', methods=['POST'])
-
-def start_training():
-    """Simulated endpoint for starting the training process."""
-    # Here you can invoke the terminal command or script that runs your training.
-    return jsonify({"message": "Training setup started!"}), 200
-
-@app.route('/get-columns', methods=['GET'])
-
-def get_columns():
-    global global_state
-    print("get-columns called, current columns:", list(global_state['uploaded_file_data'].columns))
-    if global_state['uploaded_file_data'] is None:
-        return jsonify({"error": "No data uploaded"}), 400
-    columns = list(global_state['uploaded_file_data'].columns)
-    print("Returning columns:", columns)
-    return jsonify({"columns": columns}), 200
-
-@app.route('/set-config', methods=['POST'])
-
-def set_config():
-    global global_state
-    try:
-        global_state['config'] = request.json
-        print(f"\n{colorama.Fore.GREEN}Received configuration:{colorama.Style.RESET_ALL}")
-        print(json.dumps(global_state['config'], indent=2))
-        return jsonify({"message": "Configuration received successfully!", "config": global_state['config']}), 200
-    except Exception as e:
-        print(f"\n{colorama.Fore.RED}Error setting config: {str(e)}{colorama.Style.RESET_ALL}")
-        return jsonify({"error": f"Failed to set configuration: {str(e)}"}), 500
-
-@app.route('/get-config', methods=['GET'])
-
-def get_config():
-    global global_state
-    if global_state['config'] is None:
-        return jsonify({"error": "No configuration set"}), 404
-    return jsonify({"config": global_state['config']}), 200
 
 
 @app.route('/upload', methods=['POST'])
-
 def upload_file():
     global global_state
     print(f"\n{Fore.GREEN}=== Received File Upload Request ==={Style.RESET_ALL}")
@@ -200,6 +160,39 @@ def upload_file():
         print(f"{Fore.RED}Unexpected error: {str(e)}{Style.RESET_ALL}")
         return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
+
+
+
+@app.route('/get-columns', methods=['GET'])
+def get_columns():
+    global global_state
+    print("get-columns called, current columns:", list(global_state['uploaded_file_data'].columns))
+    if global_state['uploaded_file_data'] is None:
+        return jsonify({"error": "No data uploaded"}), 400
+    columns = list(global_state['uploaded_file_data'].columns)
+    print("Returning columns:", columns)
+    return jsonify({"columns": columns}), 200
+
+@app.route('/set-config', methods=['POST'])
+def set_config():
+    global global_state
+    try:
+        global_state['config'] = request.json
+        print(f"\n{colorama.Fore.GREEN}Received configuration:{colorama.Style.RESET_ALL}")
+        print(json.dumps(global_state['config'], indent=2))
+        return jsonify({"message": "Configuration received successfully!", "config": global_state['config']}), 200
+    except Exception as e:
+        print(f"\n{colorama.Fore.RED}Error setting config: {str(e)}{colorama.Style.RESET_ALL}")
+        return jsonify({"error": f"Failed to set configuration: {str(e)}"}), 500
+
+@app.route('/get-config', methods=['GET'])
+def get_config():
+    global global_state
+    if global_state['config'] is None:
+        return jsonify({"error": "No configuration set"}), 404
+    return jsonify({"config": global_state['config']}), 200
+
+
 def detect_and_encode_categorical(df, max_unique_ratio=0.05):
     categorical_columns = []
     
@@ -249,7 +242,7 @@ def detect_and_encode_categorical(df, max_unique_ratio=0.05):
 def setup_training():
     print("Received request data:", request.json)  # Add this line
     print("Request content type:", request.content_type) 
-    global_state
+    global global_state
     print(f"\n{Fore.GREEN}=== Received Training Setup Request ==={Style.RESET_ALL}")
     
     # Clear the log queue before starting new training
@@ -502,6 +495,17 @@ def setup_training():
             "status": "error",
             "traceback": traceback.format_exc()
         }), 500
+
+
+
+@app.route('/start-training', methods=['POST'])
+def start_training():
+    """Simulated endpoint for starting the training process."""
+    # Here you can invoke the terminal command or script that runs your training.
+    return jsonify({"message": "Training setup started!"}), 200
+
+
+
 
 # Modify the upload_and_predict route
 @app.route('/upload-and-predict', methods=['POST'])
