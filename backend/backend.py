@@ -47,9 +47,7 @@ flaml_logger.addHandler(console_handler)
 
 colorama.init()
 app = Flask(__name__)
-
-
-CORS(app)
+CORS(app, origins=["https://baby-ml.vercel.app"])
      
 #     , resources={
 #    r"/*": {
