@@ -165,7 +165,7 @@ def get_columns():
     global global_state
     print("get-columns called, current columns:", list(global_state['uploaded_file_data'].columns))
     if global_state['uploaded_file_data'] is None:
-        return jsonify({"error": "No data uploaded"}), 400
+        return jsonify({"error": "No data uploaded getcolumns"}), 400
     columns = list(global_state['uploaded_file_data'].columns)
     print("Returning columns:", columns)
     return jsonify({"columns": columns}), 200
@@ -238,8 +238,8 @@ def setup_training():
 
 
     if global_state['uploaded_file_data'] is None:
-        print ("Error: No data uploaded sians")
-        return jsonify({"error": "No data uploaded sians"}), 400
+        print ("Error: No data uploaded setupt")
+        return jsonify({"error": "No data uploaded setupt"}), 400
 
     try:
         global_state['config'] = request.json
