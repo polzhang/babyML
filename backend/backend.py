@@ -236,10 +236,10 @@ def setup_training():
         del global_state['automl_instance']
         global_state['automl_instance'] = None
 
-
-    if global_state['uploaded_file_data'] is None:
-        print ("Error: No data uploaded setupt")
-        return jsonify({"error": "No data uploaded setupt"}), 400
+    ##how is this being overwritten?
+    #if global_state['uploaded_file_data'] is None:
+    #    print ("Error: No data uploaded setupt")
+    #    return jsonify({"error": "No data uploaded setupt"}), 400
 
     try:
         global_state['config'] = request.json
