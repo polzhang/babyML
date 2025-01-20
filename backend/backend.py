@@ -252,7 +252,7 @@ def detect_and_encode_categorical(df, max_unique_ratio=0.05):
 def detect_and_encode_categorical(df):
     """Helper function to encode categorical columns"""
     for column in df.select_dtypes(include=['object']).columns:
-        df[column] = LabelEncoder().fit_transform(df[column].astype(str))
+        df[column] = pd.Categorical(df[column]).codes
     return df
 
 @app.route('/setup-training', methods=['POST'])
@@ -526,68 +526,73 @@ def start_training():
 
 
 
-# Modify the upload_and_predict route
 @app.route('/upload-and-predict', methods=['POST'])
-
 def upload_and_predict():
     """Handle both test data upload and prediction."""
-    global global_state
-    print(f"\n{colorama.Fore.CYAN}=== Starting Prediction Process ==={colorama.Style.RESET_ALL}")
-    print(f"Current config state: {global_state['config']}")
-    
-    if global_state['config'] is None:
-        print(f"{colorama.Fore.RED}Error: No configuration found{colorama.Style.RESET_ALL}")
-        return jsonify({"error": "No configuration found. Please set up training first."}), 400
-    
-    # Then verify target variable exists in config
-    target_column = global_state['config'].get('target_variable')
-    if not target_column:
-        print(f"{colorama.Fore.RED}Error: 'target_variable' not found in config{colorama.Style.RESET_ALL}")
-        print(f"Current config: {json.dumps(global_state['config'], indent=2)}")
-        return jsonify({
-            "error": "'target_variable' not found in config",
-            "current_config": global_state['config']
-        }), 400
+    if redis_client is None:
+        logging.error("Redis client is not initialized")
+        return jsonify({"error": "Database connection error"}), 503
 
-    print(f"\n{Fore.GREEN}=== Received Request for Upload and Prediction ==={Style.RESET_ALL}")
-
-    if 'file' not in request.files:
-        print(f"{Fore.RED}Error: No file part in request{Style.RESET_ALL}")
-        return jsonify({"error": "No file part in the request"}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        print(f"{Fore.RED}Error: No selected file{Style.RESET_ALL}")
-        return jsonify({"error": "No selected file"}), 400
+    print(f"\n{Fore.CYAN}=== Starting Prediction Process ==={Style.RESET_ALL}")
 
     try:
-        # Save the file content
-        file_content = file.read()
-        file.seek(0)  # Reset file pointer
+        # Get configuration from Redis
+        config_data = redis_client.get('training_config')
+        if config_data is None:
+            print(f"{Fore.RED}Error: No configuration found{Style.RESET_ALL}")
+            return jsonify({"error": "No configuration found. Please set up training first."}), 400
         
-        # Upload file
+        config = pickle.loads(config_data)
+        print(f"Current config state: {config}")
+
+        # Verify target variable exists in config
+        target_column = config.get('target_variable')
+        if not target_column:
+            print(f"{Fore.RED}Error: 'target_variable' not found in config{Style.RESET_ALL}")
+            return jsonify({
+                "error": "'target_variable' not found in config",
+                "current_config": config
+            }), 400
+
+        print(f"\n{Fore.GREEN}=== Received Request for Upload and Prediction ==={Style.RESET_ALL}")
+
+        if 'file' not in request.files:
+            print(f"{Fore.RED}Error: No file part in request{Style.RESET_ALL}")
+            return jsonify({"error": "No file part in the request"}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            print(f"{Fore.RED}Error: No selected file{Style.RESET_ALL}")
+            return jsonify({"error": "No selected file"}), 400
+
+        # Read the file
+        file_content = file.read()
+        file.seek(0)
+        
         file_extension = file.filename.split('.')[-1].lower()
         if file_extension == 'csv':
             file_stream = io.StringIO(file_content.decode("utf-8"))
-            global_state['test_data'] = pd.read_csv(file_stream)
+            test_data = pd.read_csv(file_stream)
         elif file_extension in ['xls', 'xlsx']:
             file_stream = io.BytesIO(file_content)
-            global_state['test_data'] = pd.read_excel(file_stream)
+            test_data = pd.read_excel(file_stream)
         else:
             return jsonify({"error": "Unsupported file type"}), 400
 
-        preprocessing_config = global_state['config'].get('preprocessing', {})
-        missing_data_config = preprocessing_config.get('missing_data', {})
-        
-        # Check for global_state['automl_instance']
-        if global_state['automl_instance'
-        ] is None:
+        # Get trained model from Redis
+        model_data = redis_client.get('automl_instance')
+        if model_data is None:
             raise ValueError("No trained model available. Please train the model first.")
         
-        # 1. Preprocess test data
+        automl = pickle.loads(model_data)
+
+        # Preprocess test data
+        preprocessing_config = config.get('preprocessing', {})
+        missing_data_config = preprocessing_config.get('missing_data', {})
+
         try:
             print("\nStarting preprocessing steps...")
-            X_test = global_state['test_data'].copy()
+            X_test = test_data.copy()
 
             # Handle missing values
             missing_strategy = missing_data_config.get('strategy')
@@ -605,53 +610,74 @@ def upload_and_predict():
             # Encode categorical variables
             X_test = detect_and_encode_categorical(X_test)
             
-            # Scale features
-            scaler = StandardScaler()
-            scaler2 = MinMaxScaler()
-            X_test = pd.DataFrame(scaler.fit_transform(X_test), columns=X_test.columns)
-            X_test = pd.DataFrame(scaler2.fit_transform(X_test), columns=X_test.columns)
+            # Get scalers from Redis and apply
+            scalers_data = redis_client.get('scalers')
+            if scalers_data is not None:
+                scaler, scaler2 = pickle.loads(scalers_data)
+                X_test = pd.DataFrame(scaler.transform(X_test), columns=X_test.columns)
+                X_test = pd.DataFrame(scaler2.transform(X_test), columns=X_test.columns)
 
-            # Feature reduction if used in training
+            # Apply PCA if used in training
             if preprocessing_config.get('feature_reduction') == 'pca':
-                pca = PCA(n_components=0.95)
-                X_test = pd.DataFrame(pca.fit_transform(X_test))
+                pca_data = redis_client.get('pca')
+                if pca_data is not None:
+                    pca = pickle.loads(pca_data)
+                    X_test = pd.DataFrame(pca.transform(X_test))
 
         except Exception as e:
             print(f"{Fore.RED}Error during preprocessing:{Style.RESET_ALL}")
             traceback.print_exc()
             raise ValueError(f"Error during data preprocessing: {str(e)}")
 
-        # 2. Generate predictions
+        # Generate predictions
         try:
-            predictions = le.inverse_transform(global_state['automl_instance'].predict(X_test))
-
-            # For classification problems, get probabilities if available
-            if global_state['config'].get('problem_type') == 'classification':
+            raw_predictions = automl.predict(X_test)
+            
+            # For classification, convert predictions back to original labels
+            if config.get('problem_type') == 'classification':
+                le_data = redis_client.get('label_encoder')
+                if le_data is not None:
+                    le = pickle.loads(le_data)
+                    predictions = le.inverse_transform(raw_predictions)
+                else:
+                    predictions = raw_predictions
+                
+                # Get probabilities if available
                 try:
-                    probabilities = global_state['automl_instance'].predict_proba(X_test)
+                    probabilities = automl.predict_proba(X_test)
                 except:
                     probabilities = None
+            else:
+                predictions = raw_predictions
+                probabilities = None
 
         except Exception as e:
             print(f"{Fore.RED}Error during prediction:{Style.RESET_ALL}")
             traceback.print_exc()
             raise ValueError(f"Error generating predictions: {str(e)}")
 
-        # 3. Combine predictions with original data
+        # Combine predictions with original data
         try:
             prediction_column = f'Predicted_{target_column}'
-            global_state['test_data'][prediction_column] = predictions
+            test_data[prediction_column] = predictions
 
-            if global_state['config'].get('problem_type') == 'classification' and probabilities is not None:
+            if config.get('problem_type') == 'classification' and probabilities is not None:
                 for i, prob in enumerate(probabilities.T):
-                    global_state['test_data'][f'Probability_Class_{i}'] = prob
+                    test_data[f'Probability_Class_{i}'] = prob
 
             response_data = {
-                "headers": global_state['test_data'].columns.tolist(),
-                "rows": global_state['test_data'].to_dict('records'),
+                "headers": test_data.columns.tolist(),
+                "rows": test_data.to_dict('records'),
                 "num_predictions": len(predictions),
                 "prediction_column": prediction_column
             }
+
+            # Store predictions in Redis
+            redis_client.set('latest_predictions', pickle.dumps({
+                'test_data': test_data,
+                'predictions': predictions,
+                'probabilities': probabilities
+            }))
 
             print(f"\n{Fore.GREEN}Successfully completed prediction process{Style.RESET_ALL}")
             return jsonify(response_data), 200
@@ -671,7 +697,6 @@ def upload_and_predict():
             "traceback": traceback_str,
             "status": "error"
         }), 500
-    
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
