@@ -7,7 +7,9 @@ import logging
 import redis
 import pickle
 import traceback
-from flask import Flask, request, jsonify, Response, stream_with_context
+from datetime import timedelta
+from flask import Flask, request, jsonify, Response, stream_with_context, session
+from flask_session import Session
 from flask_cors import CORS, cross_origin
 from flaml import AutoML
 from sklearn.model_selection import train_test_split
@@ -24,6 +26,8 @@ import json
 from colorama import Fore, Style
 from flaml.automl.logger import logger as flaml_logger
 from urllib.parse import urlparse
+
+#IMPORTANT df = pd.DataFrame(session['uploaded_file_data'])
 
 
 log_queue = queue.Queue()
@@ -80,28 +84,29 @@ def get_redis_client():
 
 redis_client = get_redis_client()
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    if not redis_client:
-        return jsonify({"status": "error", "message": "Redis connection failed"}), 500
-    try:
-        redis_client.ping()
-        return jsonify({"status": "healthy", "message": "Connected to Redis"}), 200
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+app.config['SESSION_TYPE'] = 'redis'
+app.config['SESSION_REDIS'] = redis_client  # Your existing redis_client
+app.config['SESSION_PERMANENT'] = False
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=1)
+Session(app)
 
-@app.route('/stream-logs') #something wrong here, maybe missing method =post/get?
+@app.route('/stream-logs')
 def stream_logs_endpoint():
     def generate():
+        # Get log queue for current session
+        session_logs = session.get('log_queue', [])
         while True:
             try:
-                # Non-blocking queue get with timeout
-                log_entry = log_queue.get_nowait()
-                yield f"data: {log_entry}\n\n"
-            except queue.Empty:
-                # Send heartbeat if no logs
+                if session_logs:
+                    log_entry = session_logs.pop(0)
+                    session.modified = True
+                    yield f"data: {log_entry}\n\n"
+                else:
+                    yield f"data: heartbeat\n\n"
+                time.sleep(0.1)
+            except Exception:
                 yield f"data: heartbeat\n\n"
-                time.sleep(0.1)  # Reduced sleep time for more responsive logging
+                time.sleep(0.1)
     
     response = Response(
         stream_with_context(generate()),
@@ -113,94 +118,57 @@ def stream_logs_endpoint():
 
 
 
-
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    if redis_client is None:
-        logging.error("Redis client is not initialized")
-        return jsonify({"error": "Database connection error"}), 503
-
     try:
         # Check if file is in request
         if 'file' not in request.files:
-            logging.error("No file part in request")
             return jsonify({"error": "No file uploaded"}), 400
 
         file = request.files['file']
         
         # Check if file was selected
         if file.filename == '':
-            logging.error("No file selected")
             return jsonify({"error": "No file selected"}), 400
 
         # Read file into pandas DataFrame
-        try:
-            # Read the file content
-            file_content = file.read()
-            
-            # Create a BytesIO object for pandas to read
-            file_stream = io.BytesIO(file_content)
-            
-            # Determine file type and read accordingly
-            if file.filename.endswith('.csv'):
-                df = pd.read_csv(file_stream)
-            elif file.filename.endswith(('.xls', '.xlsx')):
-                df = pd.read_excel(file_stream)
-            else:
-                logging.error(f"Unsupported file type: {file.filename}")
-                return jsonify({"error": "Unsupported file type. Please upload CSV or Excel file"}), 400
-
-            # Pickle the DataFrame and store in Redis
-            pickled_data = pickle.dumps(df)
-            redis_client.set('uploaded_file_data', pickled_data)
-            
-            # Return the column names
-            columns = list(df.columns)
-            logging.info(f"Successfully uploaded file with columns: {columns}")
-            return jsonify({
-                "message": "File successfully uploaded",
-                "columns": columns
-            }), 200
-
-        except pd.errors.EmptyDataError:
-            logging.error("Empty file uploaded")
-            return jsonify({"error": "The uploaded file is empty"}), 400
-        except pd.errors.ParserError as e:
-            logging.error(f"Error parsing file: {str(e)}")
-            return jsonify({"error": "Error parsing file. Please check the file format"}), 400
-            
-    except redis.RedisError as e:
-        logging.error(f"Redis error in upload_file: {str(e)}")
-        return jsonify({"error": "Database operation failed"}), 500
+        file_content = file.read()
+        file_stream = io.BytesIO(file_content)
         
-    except Exception as e:
-        logging.error(f"Unexpected error in upload_file: {str(e)}")
-        return jsonify({"error": "Server error processing upload"}), 500
+        # Determine file type and read accordingly
+        if file.filename.endswith('.csv'):
+            df = pd.read_csv(file_stream)
+        elif file.filename.endswith(('.xls', '.xlsx')):
+            df = pd.read_excel(file_stream)
+        else:
+            return jsonify({"error": "Unsupported file type. Please upload CSV or Excel file"}), 400
 
+        # Store DataFrame in session
+        session['uploaded_file_data'] = df.to_dict()  # Convert DataFrame to dict for session storage
+        session['columns'] = list(df.columns)
+        
+        return jsonify({
+            "message": "File successfully uploaded",
+            "columns": list(df.columns)
+        }), 200
+
+    except pd.errors.EmptyDataError:
+        return jsonify({"error": "The uploaded file is empty"}), 400
+    except pd.errors.ParserError as e:
+        return jsonify({"error": "Error parsing file. Please check the file format"}), 400
+    except Exception as e:
+        return jsonify({"error": "Server error processing upload"}), 500
 
 @app.route('/get-columns', methods=['GET'])
 def get_columns():
-    if redis_client is None:
-        logging.error("Redis client is not initialized")
-        return jsonify({"error": "Database connection error"}), 503
-    
     try:
-        pickled_data = redis_client.get('uploaded_file_data')
-        if pickled_data is None:
-            logging.warning("No data found in Redis for get-columns")
+        if 'columns' not in session:
             return jsonify({"error": "No data uploaded"}), 404
         
-        df = pickle.loads(pickled_data)
-        columns = list(df.columns)
-        logging.info(f"Successfully retrieved columns: {columns}")
+        columns = session['columns']
         return jsonify({"columns": columns}), 200
         
-    except (pickle.UnpicklingError, redis.RedisError) as e:
-        logging.error(f"Error retrieving data: {str(e)}")
-        return jsonify({"error": "Error retrieving data"}), 500
-        
     except Exception as e:
-        logging.error(f"Unexpected error in get-columns: {str(e)}")
         return jsonify({"error": "Server error retrieving columns"}), 500
 
 def detect_and_encode_categorical(df, max_unique_ratio=0.05):
