@@ -278,6 +278,7 @@ const Component2: React.FC<{
               value={timeBudget}
               onChange={(e) => setTimeBudget(e.target.value)}
               min="10"
+              max="20"
             />
           </div>
             </TabsContent>
