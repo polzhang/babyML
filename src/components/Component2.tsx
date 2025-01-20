@@ -271,7 +271,7 @@ const Component2: React.FC<{
               </div>
 
               <div>
-            <Label>Time Budget (seconds)</Label>
+            <Label>Time Budget (Recommended: Keep below 20s)</Label>
             <Input
               type="number"
               placeholder="Enter value"
