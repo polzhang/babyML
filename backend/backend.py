@@ -112,31 +112,58 @@ def stream_logs_endpoint():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    # Check if Redis connection is available
     if redis_client is None:
         logging.error("Redis client is not initialized")
-        return jsonify({"error": "Database connection error"}), 503  # Service Unavailable
-    
+        return jsonify({"error": "Database connection error"}), 503
+
     try:
-        # Attempt to get data from Redis
-        pickled_data = redis_client.get('uploaded_file_data')
-        if pickled_data is None:
-            logging.warning("No data found in Redis")
-            return jsonify({"error": "No data uploaded"}), 404  # Not Found
+        # Check if file is in request
+        if 'file' not in request.files:
+            logging.error("No file part in request")
+            return jsonify({"error": "No file uploaded"}), 400
+
+        file = request.files['file']
         
+        # Check if file was selected
+        if file.filename == '':
+            logging.error("No file selected")
+            return jsonify({"error": "No file selected"}), 400
+
+        # Read file into pandas DataFrame
         try:
-            df = pickle.loads(pickled_data)
-            if not isinstance(df, pd.DataFrame):
-                logging.error("Unpickled data is not a DataFrame")
-                return jsonify({"error": "Invalid data format"}), 400
-                
-            columns = list(df.columns)
-            logging.info(f"Successfully retrieved columns: {columns}")
-            return jsonify({"columns": columns}), 200
+            # Read the file content
+            file_content = file.read()
             
-        except pickle.UnpicklingError as e:
-            logging.error(f"Error unpickling data: {str(e)}")
-            return jsonify({"error": "Error unpickling data"}), 500
+            # Create a BytesIO object for pandas to read
+            file_stream = io.BytesIO(file_content)
+            
+            # Determine file type and read accordingly
+            if file.filename.endswith('.csv'):
+                df = pd.read_csv(file_stream)
+            elif file.filename.endswith(('.xls', '.xlsx')):
+                df = pd.read_excel(file_stream)
+            else:
+                logging.error(f"Unsupported file type: {file.filename}")
+                return jsonify({"error": "Unsupported file type. Please upload CSV or Excel file"}), 400
+
+            # Pickle the DataFrame and store in Redis
+            pickled_data = pickle.dumps(df)
+            redis_client.set('uploaded_file_data', pickled_data)
+            
+            # Return the column names
+            columns = list(df.columns)
+            logging.info(f"Successfully uploaded file with columns: {columns}")
+            return jsonify({
+                "message": "File successfully uploaded",
+                "columns": columns
+            }), 200
+
+        except pd.errors.EmptyDataError:
+            logging.error("Empty file uploaded")
+            return jsonify({"error": "The uploaded file is empty"}), 400
+        except pd.errors.ParserError as e:
+            logging.error(f"Error parsing file: {str(e)}")
+            return jsonify({"error": "Error parsing file. Please check the file format"}), 400
             
     except redis.RedisError as e:
         logging.error(f"Redis error in upload_file: {str(e)}")
@@ -149,40 +176,28 @@ def upload_file():
 
 @app.route('/get-columns', methods=['GET'])
 def get_columns():
-    # Check if Redis connection is available
     if redis_client is None:
         logging.error("Redis client is not initialized")
         return jsonify({"error": "Database connection error"}), 503
     
     try:
-        # Attempt to get data from Redis
         pickled_data = redis_client.get('uploaded_file_data')
         if pickled_data is None:
             logging.warning("No data found in Redis for get-columns")
             return jsonify({"error": "No data uploaded"}), 404
         
-        try:
-            df = pickle.loads(pickled_data)
-            if not isinstance(df, pd.DataFrame):
-                logging.error("Retrieved data is not a DataFrame")
-                return jsonify({"error": "Invalid data format"}), 400
-                
-            columns = list(df.columns)
-            logging.info(f"Successfully retrieved columns: {columns}")
-            return jsonify({"columns": columns}), 200
-            
-        except pickle.UnpicklingError as e:
-            logging.error(f"Error unpickling data in get-columns: {str(e)}")
-            return jsonify({"error": "Error unpickling data"}), 500
-            
-    except redis.RedisError as e:
-        logging.error(f"Redis error in get-columns: {str(e)}")
-        return jsonify({"error": "Database operation failed"}), 500
+        df = pickle.loads(pickled_data)
+        columns = list(df.columns)
+        logging.info(f"Successfully retrieved columns: {columns}")
+        return jsonify({"columns": columns}), 200
+        
+    except (pickle.UnpicklingError, redis.RedisError) as e:
+        logging.error(f"Error retrieving data: {str(e)}")
+        return jsonify({"error": "Error retrieving data"}), 500
         
     except Exception as e:
         logging.error(f"Unexpected error in get-columns: {str(e)}")
         return jsonify({"error": "Server error retrieving columns"}), 500
-
 
 def detect_and_encode_categorical(df, max_unique_ratio=0.05):
     categorical_columns = []
