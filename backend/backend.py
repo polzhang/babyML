@@ -14,6 +14,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder, OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
+from sklearn.metrics import (
+    classification_report, confusion_matrix, roc_auc_score,
+    mean_squared_error, mean_absolute_error, r2_score, mean_absolute_percentage_error
+)
 import colorama
 import queue
 import json
@@ -244,65 +248,81 @@ def detect_and_encode_categorical(df, max_unique_ratio=0.05):
     
     return df_encoded
 
+
+def detect_and_encode_categorical(df):
+    """Helper function to encode categorical columns"""
+    for column in df.select_dtypes(include=['object']).columns:
+        df[column] = LabelEncoder().fit_transform(df[column].astype(str))
+    return df
+
 @app.route('/setup-training', methods=['POST'])
 def setup_training():
-    global global_state
-    print("Received request data:", request.json)  # Add this line
-    print("Request content type:", request.content_type) 
+    if redis_client is None:
+        logging.error("Redis client is not initialized")
+        return jsonify({"error": "Database connection error"}), 503
+
+    print("Received request data:", request.json)
+    print("Request content type:", request.content_type)
     print(f"\n{Fore.GREEN}=== Received Training Setup Request ==={Style.RESET_ALL}")
 
-
-    # need to fix logstreaming issue
+    # Clear log queue
     while not log_queue.empty():
         try:
             log_queue.get_nowait()
         except queue.Empty:
             break
-    
-    # Clear previous automl instance
-    if global_state['automl_instance'] is not None:
-        del global_state['automl_instance']
-        global_state['automl_instance'] = None
 
-    #how is this being overwritten?
-    if global_state['uploaded_file_data'] is None:
-        print ("Error: No data uploaded setupt")
-        return jsonify({"error": "No data uploaded setupt"}), 400
+    # Clear previous AutoML instance from Redis if it exists
+    if redis_client.exists('automl_instance'):
+        redis_client.delete('automl_instance')
 
     try:
-        global_state['config'] = request.json
+        # Get data from Redis
+        pickled_data = redis_client.get('uploaded_file_data')
+        if pickled_data is None:
+            print("Error: No data uploaded setup")
+            return jsonify({"error": "No data uploaded setup"}), 400
+
+        # Load the DataFrame
+        df = pickle.loads(pickled_data)
+
+        # Store configuration in Redis
+        config = request.json
+        redis_client.set('training_config', pickle.dumps(config))
         print(f"\n{Fore.YELLOW}Received Configuration:{Style.RESET_ALL}")
-        print(global_state['config'])
+        print(config)
 
         # Extract required values from config with defaults
-        target_column = global_state['config'].get('target_variable')
-        problem_type = global_state['config'].get('problem_type', 'classification')
-        validation_settings = global_state['config'].get('validation', {})
+        target_column = config.get('target_variable')
+        problem_type = config.get('problem_type', 'classification')
+        validation_settings = config.get('validation', {})
         validation_method = validation_settings.get('method', 'holdout')
-        split_ratio = validation_settings.get('split_ratio', 0.8)  # Default to 0.8 if not provided
-        
+        split_ratio = validation_settings.get('split_ratio', 0.8)
+
         if not target_column:
             print("target var not specified")
             return jsonify({"error": "Target variable not specified"}), 400
 
-        X = global_state['uploaded_file_data'].drop(columns=[target_column])
-        y = global_state['uploaded_file_data'][target_column]
+        X = df.drop(columns=[target_column])
+        y = df[target_column]
 
         # Classification preprocessing
+        label_mapping = None
         if problem_type == 'classification':
             if pd.api.types.is_numeric_dtype(y):
                 print(f"\n{Fore.YELLOW}Converting numeric target to categorical for classification{Style.RESET_ALL}")
                 y = y.astype(str)
-            global le 
             le = LabelEncoder()
             y = le.fit_transform(y)
             label_mapping = dict(zip(le.transform(le.classes_), le.classes_))
-    
-                # Print the label mapping
+            
+            # Store label encoder in Redis for later use
+            redis_client.set('label_encoder', pickle.dumps(le))
+            
             print(f"\n{Fore.CYAN}Label Mapping (Numeric to Original Class):{Style.RESET_ALL}")
             for num, label in label_mapping.items():
                 print(f"{num} -> {label}")
-            
+
         elif problem_type == 'regression':
             if not pd.api.types.is_numeric_dtype(y):
                 print("targetvar must be numeric for regression")
@@ -310,7 +330,7 @@ def setup_training():
             y = y.astype(float)
 
         # Handle missing data
-        preprocessing_config = global_state['config'].get('preprocessing', {})
+        preprocessing_config = config.get('preprocessing', {})
         missing_data_config = preprocessing_config.get('missing_data', {})
         missing_strategy = missing_data_config.get('strategy')
 
@@ -335,10 +355,14 @@ def setup_training():
         X = pd.DataFrame(scaler.fit_transform(X), columns=X.columns)
         X = pd.DataFrame(scaler2.fit_transform(X), columns=X.columns)
 
+        # Store preprocessors in Redis
+        redis_client.set('scalers', pickle.dumps((scaler, scaler2)))
+
         # Feature reduction
         if preprocessing_config.get('feature_reduction') == 'pca':
             pca = PCA(n_components=0.95)
             X = pd.DataFrame(pca.fit_transform(X))
+            redis_client.set('pca', pickle.dumps(pca))
 
         # Train-test split
         X_train, X_test, y_train, y_test = train_test_split(
@@ -353,13 +377,13 @@ def setup_training():
         print(f"X_test: {X_test.shape}")
 
         # FLAML setup
-        global_state['automl_instance'] = AutoML()
+        automl = AutoML()
         settings = {
-            'time_budget': global_state['config'].get('time_budget') ,  # seconds
+            'time_budget': config.get('time_budget'),
             'metric': validation_settings.get('metric', 'accuracy' if problem_type == 'classification' else 'r2'),
             'task': problem_type,
             'n_jobs': -1,
-            'estimator_list': global_state['config'].get('models', {}).get('selected', ['lgbm', 'rf', 'xgboost', 'extra_tree']),
+            'estimator_list': config.get('models', {}).get('selected', ['lgbm', 'rf', 'xgboost', 'extra_tree']),
             'eval_method': validation_method
         }
 
@@ -371,30 +395,26 @@ def setup_training():
         print(f"\n{Fore.YELLOW}=== Starting FLAML Training ==={Style.RESET_ALL}")
         print("Settings:", settings)
 
-        global_state['automl_instance'].fit(
+        automl.fit(
             X_train=X_train,
             y_train=y_train,
             **settings
         )
 
-        best_model = global_state['automl_instance'].model.estimator
-        best_model = global_state['automl_instance'].model.estimator
-        
-        # Calculate additional metrics based on problem type
+        # Store trained model and test data in Redis
+        redis_client.set('automl_instance', pickle.dumps(automl))
+        redis_client.set('test_data', pickle.dumps((X_test, y_test)))
+
+        best_model = automl.model.estimator
+
+        # Calculate metrics
         if problem_type == 'classification':
-            from sklearn.metrics import (
-                classification_report, confusion_matrix, 
-                roc_auc_score, precision_recall_fscore_support
-            )
+            y_pred = automl.predict(X_test)
+            y_pred_proba = automl.predict_proba(X_test)
             
-            y_pred = global_state['automl_instance'].predict(X_test)
-            y_pred_proba = global_state['automl_instance'].predict_proba(X_test)
-            
-            # Get classification metrics
             class_report = classification_report(y_test, y_pred, output_dict=True)
             conf_matrix = confusion_matrix(y_test, y_pred).tolist()
             
-            # Calculate ROC AUC (handle binary/multiclass)
             try:
                 if len(np.unique(y)) == 2:
                     roc_auc = roc_auc_score(y_test, y_pred_proba[:, 1])
@@ -407,31 +427,25 @@ def setup_training():
                 "classification_report": class_report,
                 "confusion_matrix": conf_matrix,
                 "roc_auc_score": roc_auc,
-                "training_time": global_state['automl_instance'].time_to_find_best_model,
-                "models_trained": len(global_state['automl_instance'].estimator_list),
-                "best_iteration": global_state['automl_instance'].best_iteration
+                "training_time": automl.time_to_find_best_model,
+                "models_trained": len(automl.estimator_list),
+                "best_iteration": automl.best_iteration
             }
             
             print(f"\n{Fore.CYAN}=== Detailed Metrics ==={Style.RESET_ALL}")
-            print(f"ROC AUC Score: {roc_auc:.4f}" if roc_auc else "ROC AUC: N/A")
-            print(f"Accuracy: {class_report['accuracy']:.4f}")
-            print(f"Macro Avg F1: {class_report['macro avg']['f1-score']:.4f}")
-            print(f"Weighted Avg F1: {class_report['weighted avg']['f1-score']:.4f}")
+            metrics_log = [
+                f"ROC AUC Score: {roc_auc:.4f}" if roc_auc else "ROC AUC: N/A",
+                f"Accuracy: {class_report['accuracy']:.4f}",
+                f"Macro Avg F1: {class_report['macro avg']['f1-score']:.4f}",
+                f"Weighted Avg F1: {class_report['weighted avg']['f1-score']:.4f}"
+            ]
             
-            log_queue.put(f"\n{Fore.CYAN}=== Detailed Metrics ==={Style.RESET_ALL}")
-            log_queue.put(f"ROC AUC Score: {roc_auc:.4f}" if roc_auc else "ROC AUC: N/A")
-            log_queue.put(f"Accuracy: {class_report['accuracy']:.4f}")
-            log_queue.put(f"Macro Avg F1: {class_report['macro avg']['f1-score']:.4f}")
-            log_queue.put(f"Weighted Avg F1: {class_report['weighted avg']['f1-score']:.4f}")
-
+            for log_msg in metrics_log:
+                print(log_msg)
+                log_queue.put(log_msg)
             
         else:  # regression
-            from sklearn.metrics import (
-                mean_squared_error, mean_absolute_error, 
-                r2_score, mean_absolute_percentage_error
-            )
-            
-            y_pred = global_state['automl_instance'].predict(X_test)
+            y_pred = automl.predict(X_test)
             
             mse = mean_squared_error(y_test, y_pred)
             rmse = np.sqrt(mse)
@@ -449,44 +463,43 @@ def setup_training():
                 "mse": mse,
                 "r2": r2,
                 "mape": mape,
-                "training_time": global_state['automl_instance'].time_to_find_best_model,
-                "models_trained": len(global_state['automl_instance'].estimator_list),
-                "best_iteration": global_state['automl_instance'].best_iteration
+                "training_time": automl.time_to_find_best_model,
+                "models_trained": len(automl.estimator_list),
+                "best_iteration": automl.best_iteration
             }
             
-            print(f"\n{Fore.CYAN}=== Detailed Metrics ==={Style.RESET_ALL}")
-            print(f"RMSE: {rmse:.4f}")
-            print(f"MAE: {mae:.4f}")
-            print(f"R²: {r2:.4f}")
-
-            log_queue.put(f"\n{Fore.CYAN}=== Detailed Metrics ==={Style.RESET_ALL}")
-            log_queue.put(f"RMSE: {rmse:.4f}")
-            log_queue.put(f"MAE: {mae:.4f}")
-            log_queue.put(f"R²: {r2:.4f}")
-
-
+            metrics_log = [
+                f"RMSE: {rmse:.4f}",
+                f"MAE: {mae:.4f}",
+                f"R²: {r2:.4f}"
+            ]
+            
             if mape is not None:
-                print(f"MAPE: {mape:.4f}")
-                log_queue.put(f"MAPE: {mape:.4f}")
+                metrics_log.append(f"MAPE: {mape:.4f}")
+            
+            for log_msg in metrics_log:
+                print(log_msg)
+                log_queue.put(log_msg)
 
-        # Get feature importance if available
+        # Get feature importance
         try:
-            feature_importance = global_state['automl_instance'].feature_importance()
+            feature_importance = automl.feature_importance()
             if isinstance(feature_importance, pd.Series):
                 feature_importance = feature_importance.to_dict()
         except:
             feature_importance = None
 
+        # Final logs
         print(f"\n{Fore.GREEN}=== Training Complete ==={Style.RESET_ALL}")
         print(f"Best ML learner: {best_model.__class__.__name__}")
-        print(f"Best hyperparameter config: {global_state['automl_instance'].best_config}")
-        print(f"Training time: {global_state['automl_instance'].time_to_find_best_model:.2f} seconds")
-        print(f"Models trained: {len(global_state['automl_instance'].estimator_list)}")
+        print(f"Best hyperparameter config: {automl.best_config}")
+        print(f"Training time: {automl.time_to_find_best_model:.2f} seconds")
+        print(f"Models trained: {len(automl.estimator_list)}")
 
         response = {
             "status": "success",
             "best_estimator": best_model.__class__.__name__,
-            "best_config": global_state['automl_instance'].best_config,
+            "best_config": automl.best_config,
             "metrics": metrics,
             "feature_importance": feature_importance
         }
@@ -502,7 +515,6 @@ def setup_training():
             "status": "error",
             "traceback": traceback.format_exc()
         }), 500
-
 
 
 @app.route('/start-training', methods=['POST'])
