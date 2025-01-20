@@ -112,30 +112,76 @@ def stream_logs_endpoint():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    if not redis_client:
-        return jsonify({"error": "Database connection error"}), 500
-
+    # Check if Redis connection is available
+    if redis_client is None:
+        logging.error("Redis client is not initialized")
+        return jsonify({"error": "Database connection error"}), 503  # Service Unavailable
+    
     try:
+        # Attempt to get data from Redis
         pickled_data = redis_client.get('uploaded_file_data')
         if pickled_data is None:
-            return jsonify({"error": "No data uploaded"}), 400
+            logging.warning("No data found in Redis")
+            return jsonify({"error": "No data uploaded"}), 404  # Not Found
         
-        df = pickle.loads(pickled_data)
-        return jsonify({"columns": list(df.columns)}), 200
+        try:
+            df = pickle.loads(pickled_data)
+            if not isinstance(df, pd.DataFrame):
+                logging.error("Unpickled data is not a DataFrame")
+                return jsonify({"error": "Invalid data format"}), 400
+                
+            columns = list(df.columns)
+            logging.info(f"Successfully retrieved columns: {columns}")
+            return jsonify({"columns": columns}), 200
+            
+        except pickle.UnpicklingError as e:
+            logging.error(f"Error unpickling data: {str(e)}")
+            return jsonify({"error": "Error unpickling data"}), 500
+            
+    except redis.RedisError as e:
+        logging.error(f"Redis error in upload_file: {str(e)}")
+        return jsonify({"error": "Database operation failed"}), 500
+        
     except Exception as e:
-        print(f"Error getting columns: {e}")
-        return jsonify({"error": "Error retrieving columns"}), 500
+        logging.error(f"Unexpected error in upload_file: {str(e)}")
+        return jsonify({"error": "Server error processing upload"}), 500
 
 
 @app.route('/get-columns', methods=['GET'])
 def get_columns():
-    global global_state
-    print("get-columns called, current columns:", list(global_state['uploaded_file_data'].columns))
-    if global_state['uploaded_file_data'] is None:
-        return jsonify({"error": "No data uploaded getcolumns"}), 400
-    columns = list(global_state['uploaded_file_data'].columns)
-    print("Returning columns:", columns)
-    return jsonify({"columns": columns}), 200
+    # Check if Redis connection is available
+    if redis_client is None:
+        logging.error("Redis client is not initialized")
+        return jsonify({"error": "Database connection error"}), 503
+    
+    try:
+        # Attempt to get data from Redis
+        pickled_data = redis_client.get('uploaded_file_data')
+        if pickled_data is None:
+            logging.warning("No data found in Redis for get-columns")
+            return jsonify({"error": "No data uploaded"}), 404
+        
+        try:
+            df = pickle.loads(pickled_data)
+            if not isinstance(df, pd.DataFrame):
+                logging.error("Retrieved data is not a DataFrame")
+                return jsonify({"error": "Invalid data format"}), 400
+                
+            columns = list(df.columns)
+            logging.info(f"Successfully retrieved columns: {columns}")
+            return jsonify({"columns": columns}), 200
+            
+        except pickle.UnpicklingError as e:
+            logging.error(f"Error unpickling data in get-columns: {str(e)}")
+            return jsonify({"error": "Error unpickling data"}), 500
+            
+    except redis.RedisError as e:
+        logging.error(f"Redis error in get-columns: {str(e)}")
+        return jsonify({"error": "Database operation failed"}), 500
+        
+    except Exception as e:
+        logging.error(f"Unexpected error in get-columns: {str(e)}")
+        return jsonify({"error": "Server error retrieving columns"}), 500
 
 
 def detect_and_encode_categorical(df, max_unique_ratio=0.05):
