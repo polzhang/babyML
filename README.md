@@ -8,4 +8,4 @@ It’s built with Next.js + Flask, and deployed using Vercel, Render, and Upstas
 Please watch the video demo in this repo for a demonstration
 
 Try it here: https://baby-ml.vercel.app/
-(Since the backend instance occasionally spins down, there might be small delays in website responsiveness)
+(Since the backend instance occasionally spins down, there might be small delays in website responsiveness ~ 1min)
